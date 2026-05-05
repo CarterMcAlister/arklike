@@ -5,6 +5,7 @@
       "release-type": "simple",
       "package-name": "arklike",
       "include-v-in-tag": true,
+      "include-component-in-tag": false,
       "extra-files": [
         {
           "type": "xml",
