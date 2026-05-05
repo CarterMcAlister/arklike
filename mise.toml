@@ -7,12 +7,20 @@ description = "Build Arklike.app without opening Xcode"
 run = "./Scripts/build-run.sh"
 
 [tasks.dev]
-description = "Kill any running Arklike, rebuild, and launch the app"
-run = "pkill Arklike 2>/dev/null || true; ./Scripts/build-run.sh --run"
+description = "Kill any running Arklike, rebuild, and launch the app with dev-only settings sections enabled"
+run = "pkill Arklike 2>/dev/null || true; defaults write com.arklike.app arklikeDevMode -bool true; ./Scripts/build-run.sh --run"
 
 [tasks.run]
 description = "Open the previously built Arklike.app"
 run = "open .build/Debug/Arklike.app"
+
+[tasks.run-dev]
+description = "Open the previously built Arklike.app with dev-only settings sections enabled"
+run = "defaults write com.arklike.app arklikeDevMode -bool true; open .build/Debug/Arklike.app"
+
+[tasks.run-normal]
+description = "Open the previously built Arklike.app with dev-only settings sections disabled"
+run = "defaults write com.arklike.app arklikeDevMode -bool false; open .build/Debug/Arklike.app"
 
 [tasks.typecheck]
 description = "Typecheck all app Swift sources"
@@ -35,8 +43,10 @@ description = "List common Arklike mise commands"
 run = """
 echo "Common commands:"
 echo "  mise run build      # build .build/Debug/Arklike.app"
-echo "  mise run dev        # rebuild and launch"
+echo "  mise run dev        # rebuild and launch with dev mode"
 echo "  mise run run        # launch existing build"
+echo "  mise run run-dev    # launch existing build with dev mode"
+echo "  mise run run-normal # launch existing build without dev mode"
 echo "  mise run test       # typecheck + plist lint"
 echo "  mise run typecheck  # Swift typecheck"
 echo "  mise run clean      # remove .build"

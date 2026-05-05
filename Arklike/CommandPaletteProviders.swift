@@ -32,7 +32,7 @@ struct BasicURLSearchProvider: CommandPaletteProviding {
         return [CommandPaletteItem(
             id: "search-\(trimmed)",
             title: "Search for “\(trimmed)”",
-            subtitle: "Search engine generation is finalized in step 6",
+            subtitle: "Search the web",
             kind: .search,
             rank: CommandPaletteRanking.rank(for: .search),
             representedURL: nil,
@@ -47,9 +47,7 @@ struct SafariTabCommandProvider: CommandPaletteProviding {
     let providerName = "Safari Tabs"
 
     func items(for query: String, context: CommandPaletteContext) -> [CommandPaletteItem] {
-        guard case .success(let windows) = SafariAutomation.shared.listWindowsAndTabs() else { return [] }
-        return windows.flatMap { window in
-            window.tabs.compactMap { tab in
+        context.safariTabs.compactMap { tab in
                 let title = tab.title ?? tab.url?.absoluteString ?? "Untitled Safari Tab"
                 let subtitle = [tab.url?.absoluteString, tab.isActive ? "Active" : nil]
                     .compactMap { $0 }
@@ -66,7 +64,6 @@ struct SafariTabCommandProvider: CommandPaletteProviding {
                     representedURL: tab.url,
                     action: .switchToSafariTab(windowId: tab.windowId, tabIndex: tab.tabIndex)
                 )
-            }
         }
     }
 }
@@ -97,8 +94,7 @@ struct SearchShortcutCommandProvider: CommandPaletteProviding {
     private let shortcuts: [(keyword: String, name: String, template: String)] = [
         ("g", "Google", "https://www.google.com/search?q=%@"),
         ("ddg", "DuckDuckGo", "https://duckduckgo.com/?q=%@"),
-        ("gh", "GitHub", "https://github.com/search?q=%@"),
-        ("so", "Stack Overflow", "https://stackoverflow.com/search?q=%@")
+        ("gh", "GitHub", "https://github.com/search?q=%@")
     ]
 
     func items(for query: String, context: CommandPaletteContext) -> [CommandPaletteItem] {
@@ -181,18 +177,19 @@ struct SettingsCommandProvider: CommandPaletteProviding {
     let providerName = "Settings"
 
     func items(for query: String, context: CommandPaletteContext) -> [CommandPaletteItem] {
-        SettingsDestination.allCases
-            .filter { query.isEmpty || $0.title.localizedCaseInsensitiveContains(query) || query.localizedCaseInsensitiveContains("settings") }
-            .map { destination in
-                CommandPaletteItem(
-                    id: "settings-\(destination.rawValue)",
-                    title: destination.title,
-                    subtitle: "Open Arklike settings",
-                    kind: .settings,
-                    rank: CommandPaletteRanking.rank(for: .settings),
-                    representedURL: nil,
-                    action: .openSettings(destination)
-                )
-            }
+        guard query.isEmpty
+                || "settings".localizedCaseInsensitiveContains(query)
+                || query.localizedCaseInsensitiveContains("settings")
+                || query.localizedCaseInsensitiveContains("preferences") else { return [] }
+
+        return [CommandPaletteItem(
+            id: "settings",
+            title: "Settings",
+            subtitle: "Open Arklike settings",
+            kind: .settings,
+            rank: CommandPaletteRanking.rank(for: .settings),
+            representedURL: nil,
+            action: .openSettings(.general)
+        )]
     }
 }

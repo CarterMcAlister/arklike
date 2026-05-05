@@ -61,6 +61,7 @@ protocol CommandPaletteProviding {
 struct CommandPaletteContext {
     let safariSnapshot: FrontmostSafariSnapshot
     let recentURLs: [URL]
+    let safariTabs: [SafariTabSnapshot]
 }
 
 enum CommandPaletteRanking {

@@ -1,0 +1,17 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "packages": {
+    ".": {
+      "release-type": "simple",
+      "package-name": "arklike",
+      "include-v-in-tag": true,
+      "extra-files": [
+        {
+          "type": "xml",
+          "path": "Arklike/Info.plist",
+          "xpath": "//dict/key[.='CFBundleShortVersionString']/following-sibling::string[1]"
+        }
+      ]
+    }
+  }
+}

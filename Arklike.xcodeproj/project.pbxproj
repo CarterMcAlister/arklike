@@ -38,6 +38,8 @@
 		A0000000000000000000A1 /* SearchEngineServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000B1 /* SearchEngineServiceTests.swift */; };
 		A0000000000000000000A2 /* TrafficRuleMatcherTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000B2 /* TrafficRuleMatcherTests.swift */; };
 		A0000000000000000000C4 /* SettingsWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000C3 /* SettingsWindowController.swift */; };
+		A0000000000000000000D2 /* MenuBarIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000D1 /* MenuBarIcon.swift */; };
+		A0000000000000000000E2 /* ToastHUD.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000E1 /* ToastHUD.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -76,6 +78,8 @@
 		A0000000000000000000B2 /* TrafficRuleMatcherTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrafficRuleMatcherTests.swift; sourceTree = "<group>"; };
 		A0000000000000000000B3 /* ArklikeTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ArklikeTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A0000000000000000000C3 /* SettingsWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsWindowController.swift; sourceTree = "<group>"; };
+		A0000000000000000000D1 /* MenuBarIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarIcon.swift; sourceTree = "<group>"; };
+		A0000000000000000000E1 /* ToastHUD.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToastHUD.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -110,6 +114,7 @@
 			children = (
 				A00000000000000000000001 /* ArklikeApp.swift */,
 				A00000000000000000000002 /* AppDelegate.swift */,
+				A0000000000000000000D1 /* MenuBarIcon.swift */,
 				A00000000000000000000003 /* SettingsView.swift */,
 				A0000000000000000000C3 /* SettingsWindowController.swift */,
 				A00000000000000000000007 /* PermissionsManager.swift */,
@@ -229,6 +234,7 @@
 			files = (
 				A00000000000000000000011 /* ArklikeApp.swift in Sources */,
 				A00000000000000000000012 /* AppDelegate.swift in Sources */,
+				A0000000000000000000D2 /* MenuBarIcon.swift in Sources */,
 				A00000000000000000000013 /* SettingsView.swift in Sources */,
 				A0000000000000000000C4 /* SettingsWindowController.swift in Sources */,
 				A00000000000000000000014 /* PermissionsManager.swift in Sources */,

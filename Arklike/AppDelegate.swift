@@ -27,7 +27,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func configureStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        item.button?.title = "Arklike"
+        item.button?.title = ""
+        item.button?.image = MenuBarIcon.arkImage()
+        item.button?.imagePosition = .imageOnly
         item.button?.toolTip = "Arklike"
 
         let menu = NSMenu()
@@ -40,11 +42,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             title: "Settings",
             action: #selector(openSettings),
             keyEquivalent: ","
-        ))
-        menu.addItem(NSMenuItem(
-            title: "Check Permissions",
-            action: #selector(checkPermissions),
-            keyEquivalent: ""
         ))
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(
@@ -91,7 +88,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         switch SafariAutomation.shared.getActiveTabURL(preferredWindowId: preferredWindowId) {
         case .success(let url):
             ClipboardService.copy(url.absoluteString)
-            NotificationHUD.show(title: "Copied URL", message: url.absoluteString)
+            ToastHUD.shared.showURLCopied()
         case .failure(let error):
             showPlaceholderAlert(title: "Could not copy URL", message: error.localizedDescription)
         }
@@ -109,29 +106,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func openSettings() {
         SettingsWindowController.shared.show()
-    }
-
-    @objc private func checkPermissions() {
-        let manager = PermissionsManager.shared
-        manager.refresh()
-        FrontmostSafariMonitor.shared.refresh(reason: "permissions menu")
-        let snapshot = manager.snapshot
-        let safariSnapshot = FrontmostSafariMonitor.shared.snapshot
-        let activeWindow = safariSnapshot.activeWindow
-        showPlaceholderAlert(
-            title: "Permissions",
-            message: """
-            Accessibility: \(snapshot.accessibility.label)
-            Apple Events for Safari: \(snapshot.appleEventsSafari.label)
-            Default browser: \(snapshot.defaultBrowser.label)
-
-            Safari frontmost: \(safariSnapshot.isSafariFrontmost ? "Yes" : "No")
-            Active Safari window id: \(activeWindow?.safariWindowId.map(String.init) ?? "Unknown")
-            Active Safari window title: \(activeWindow?.title ?? "Unknown")
-
-            The command palette can open without Apple Events. Safari tab actions require Apple Events; profile switching, menu automation, and sidebar toggling require Apple Events plus Accessibility.
-            """
-        )
     }
 
     @objc private func quit() {

@@ -15,7 +15,9 @@ struct CommandPaletteView: View {
                     .focused($inputFocused)
                     .onSubmit { controller.performSelected() }
             }
-            .padding(16)
+            .padding(.horizontal, 12)
+            .padding(.top, 0)
+            .padding(.bottom, 3)
 
             Divider()
 
@@ -27,9 +29,17 @@ struct CommandPaletteView: View {
                     ScrollView {
                         LazyVStack(spacing: 2) {
                             ForEach(Array(controller.items.enumerated()), id: \.element.id) { index, item in
-                                CommandPaletteRow(item: item, isSelected: index == controller.selectedIndex)
-                                    .id(item.id)
-                                    .onTapGesture { controller.perform(item) }
+                                Button {
+                                    controller.select(index: index)
+                                    controller.perform(item)
+                                } label: {
+                                    CommandPaletteRow(item: item, isSelected: index == controller.selectedIndex)
+                                }
+                                .buttonStyle(.plain)
+                                .id(item.id)
+                                .onHover { hovering in
+                                    if hovering { controller.select(index: index) }
+                                }
                             }
                         }
                         .padding(8)
@@ -47,14 +57,13 @@ struct CommandPaletteView: View {
                 Text("Return Open")
                 Text("Esc Close")
                 Spacer()
-                Text("Safari-scoped")
             }
             .font(.caption)
             .foregroundStyle(.secondary)
             .padding(.horizontal, 14)
             .padding(.vertical, 8)
         }
-        .frame(width: 720, height: 420)
+        .frame(width: 720, height: 392)
         .background(.regularMaterial)
         .onAppear { inputFocused = true }
         .onExitCommand { controller.dismiss() }

@@ -50,7 +50,9 @@ struct SettingsView: View {
 
             Divider()
 
-            safariMonitorSection
+            if isDevMode {
+                safariMonitorSection
+            }
 
             ProfilesSettingsView()
                 .padding(14)
@@ -62,19 +64,11 @@ struct SettingsView: View {
 
             Divider()
 
-            DiagnosticsView()
-                .padding(14)
-                .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 12))
-
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Graceful degradation")
-                    .font(.headline)
-                Text("• The command palette UI can open without Apple Events permission.")
-                Text("• Opening Safari tabs and copying the current URL require Apple Events permission.")
-                Text("• Profile switching, menu automation, and the Safari sidebar toggle require Apple Events plus Accessibility permission.")
+            if isDevMode {
+                DiagnosticsView()
+                    .padding(14)
+                    .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 12))
             }
-            .font(.callout)
-            .foregroundStyle(.secondary)
 
             HStack {
                 Button("Refresh") {
@@ -142,13 +136,15 @@ struct SettingsView: View {
             Text("Arklike Settings")
                 .font(.title2)
                 .bold()
-            Text("Arklike needs a small set of macOS permissions to reproduce Safari-focused Arc workflows. Grant only what you need; unavailable features will explain what permission is missing.")
+            Text("Arklike needs a small set of macOS permissions for Safari shortcuts, profile switching, and link routing. Grant only what you need; unavailable features will explain what permission is missing.")
                 .fixedSize(horizontal: false, vertical: true)
                 .foregroundStyle(.secondary)
-            Text("Running app: \(Bundle.main.bundleURL.path)")
-                .font(.caption)
-                .foregroundStyle(.secondary)
         }
+    }
+
+    private var isDevMode: Bool {
+        ProcessInfo.processInfo.environment["ARKLIKE_DEV_MODE"] == "1"
+            || UserDefaults.standard.bool(forKey: "arklikeDevMode")
     }
 
     private var defaultBrowserDetail: String {
