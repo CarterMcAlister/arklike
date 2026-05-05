@@ -12,6 +12,7 @@ final class CommandPaletteController: ObservableObject {
     @Published var selectedIndex: Int = 0
 
     private var panel: NSPanel?
+    private var keyMonitor: Any?
     private var recentURLs: [URL] = []
     private let providers: [CommandPaletteProviding] = [
         SearchShortcutCommandProvider(),
@@ -35,10 +36,12 @@ final class CommandPaletteController: ObservableObject {
         position(panel: panel)
         NSApp.activate(ignoringOtherApps: true)
         panel.makeKeyAndOrderFront(nil)
+        installKeyMonitor()
     }
 
     func dismiss() {
         panel?.orderOut(nil)
+        removeKeyMonitor()
     }
 
     func moveSelection(delta: Int) {
@@ -105,6 +108,36 @@ final class CommandPaletteController: ObservableObject {
         recentURLs.removeAll { $0 == url }
         recentURLs.insert(url, at: 0)
         recentURLs = Array(recentURLs.prefix(50))
+    }
+
+    private func installKeyMonitor() {
+        removeKeyMonitor()
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self else { return event }
+            switch event.keyCode {
+            case 126: // up arrow
+                self.moveSelection(delta: -1)
+                return nil
+            case 125: // down arrow
+                self.moveSelection(delta: 1)
+                return nil
+            case 36, 76: // return / keypad enter
+                self.performSelected()
+                return nil
+            case 53: // escape
+                self.dismiss()
+                return nil
+            default:
+                return event
+            }
+        }
+    }
+
+    private func removeKeyMonitor() {
+        if let keyMonitor {
+            NSEvent.removeMonitor(keyMonitor)
+        }
+        keyMonitor = nil
     }
 
     private func makePanel() -> NSPanel {
