@@ -2,6 +2,17 @@
 
 Arklike is a native macOS menu-bar app that recreates Arc-style workflows for Safari.
 
+## Install
+
+Install the signed and notarized macOS app from the Homebrew tap:
+
+```sh
+brew tap CarterMcAlister/tools
+brew install --cask arklike
+```
+
+Arklike requires macOS 14 or newer. On first launch, macOS will prompt for the Accessibility and Apple Events permissions needed to automate Safari workflows.
+
 ## Goals
 
 - Open a command-palette style URL/search menu while Safari is frontmost.
