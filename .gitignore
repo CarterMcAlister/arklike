@@ -1,0 +1,35 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+
+# Xcode
+DerivedData/
+build/
+*.pbxuser
+!default.pbxuser
+*.mode1v3
+!default.mode1v3
+*.mode2v3
+!default.mode2v3
+*.perspectivev3
+!default.perspectivev3
+xcuserdata/
+*.xcuserstate
+*.xcscmblueprint
+
+# Swift / local builds
+.build/
+.swiftpm/
+Package.resolved
+
+# Logs and diagnostics
+*.log
+
+# Local environment and agent state
+.env
+.env.*
+!.env.example
+.pi/

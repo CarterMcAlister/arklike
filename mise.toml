@@ -1,0 +1,43 @@
+[tools]
+# Uses the system Apple Swift/Xcode toolchain.
+# Install mise only; no project-local tool install is required.
+
+[tasks.build]
+description = "Build Arklike.app without opening Xcode"
+run = "./Scripts/build-run.sh"
+
+[tasks.dev]
+description = "Kill any running Arklike, rebuild, and launch the app"
+run = "pkill Arklike 2>/dev/null || true; ./Scripts/build-run.sh --run"
+
+[tasks.run]
+description = "Open the previously built Arklike.app"
+run = "open .build/Debug/Arklike.app"
+
+[tasks.typecheck]
+description = "Typecheck all app Swift sources"
+run = "swiftc -typecheck -target arm64-apple-macosx14.0 Arklike/*.swift"
+
+[tasks.lint-plist]
+description = "Validate app Info.plist and entitlements"
+run = "plutil -lint Arklike/Info.plist Arklike/Arklike.entitlements"
+
+[tasks.test]
+description = "Run lightweight validation that does not require xcodebuild"
+depends = ["typecheck", "lint-plist"]
+
+[tasks.clean]
+description = "Remove local build artifacts"
+run = "rm -rf .build"
+
+[tasks.commands]
+description = "List common Arklike mise commands"
+run = """
+echo "Common commands:"
+echo "  mise run build      # build .build/Debug/Arklike.app"
+echo "  mise run dev        # rebuild and launch"
+echo "  mise run run        # launch existing build"
+echo "  mise run test       # typecheck + plist lint"
+echo "  mise run typecheck  # Swift typecheck"
+echo "  mise run clean      # remove .build"
+"""
