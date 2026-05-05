@@ -20,8 +20,8 @@
 		A0000000000000000000001B /* CommandPaletteProviders.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000000E /* CommandPaletteProviders.swift */; };
 		A0000000000000000000001C /* CommandPaletteController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000000F /* CommandPaletteController.swift */; };
 		A0000000000000000000001D /* CommandPaletteView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000010 /* CommandPaletteView.swift */; };
-		A0000000000000000000001E /* SafariAutomation.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000001F /* SafariAutomation.swift */; };
-		A000000000000000000021 /* URLParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000000000020 /* URLParser.swift */; };
+		A0000000000000000000001E /* SafariAutomation.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0000000000000000000001 /* SafariAutomation.swift */; };
+		A000000000000000000021 /* URLParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0000000000000000000002 /* URLParser.swift */; };
 		A000000000000000000023 /* SearchEngineService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000000000022 /* SearchEngineService.swift */; };
 		A000000000000000000028 /* ClipboardService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000001E /* ClipboardService.swift */; };
 		A000000000000000000029 /* NotificationHUD.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000001F /* NotificationHUD.swift */; };
@@ -58,9 +58,9 @@
 		A0000000000000000000000E /* CommandPaletteProviders.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandPaletteProviders.swift; sourceTree = "<group>"; };
 		A0000000000000000000000F /* CommandPaletteController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandPaletteController.swift; sourceTree = "<group>"; };
 		A00000000000000000000010 /* CommandPaletteView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandPaletteView.swift; sourceTree = "<group>"; };
-		A0000000000000000000001F /* SafariAutomation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SafariAutomation.swift; sourceTree = "<group>"; };
+		B0000000000000000000001 /* SafariAutomation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SafariAutomation.swift; sourceTree = "<group>"; };
 		A00000000000000000000006 /* Arklike.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Arklike.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		A000000000000000000020 /* URLParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = URLParser.swift; sourceTree = "<group>"; };
+		B0000000000000000000002 /* URLParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = URLParser.swift; sourceTree = "<group>"; };
 		A000000000000000000022 /* SearchEngineService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchEngineService.swift; sourceTree = "<group>"; };
 		A00000000000000000001E /* ClipboardService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipboardService.swift; sourceTree = "<group>"; };
 		A00000000000000000001F /* NotificationHUD.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationHUD.swift; sourceTree = "<group>"; };
@@ -127,12 +127,21 @@
 				A0000000000000000000000E /* CommandPaletteProviders.swift */,
 				A0000000000000000000000F /* CommandPaletteController.swift */,
 				A00000000000000000000010 /* CommandPaletteView.swift */,
-				A0000000000000000000001F /* SafariAutomation.swift */,
+				B0000000000000000000001 /* SafariAutomation.swift */,
 				A000000000000000000022 /* SearchEngineService.swift */,
 				A000000000000000000020 /* SafariSidebarController.swift */,
 				A00000000000000000001F /* NotificationHUD.swift */,
 				A00000000000000000001E /* ClipboardService.swift */,
-				A000000000000000000020 /* URLParser.swift */,
+				B0000000000000000000002 /* URLParser.swift */,
+				A000000000000000000032 /* Profiles.swift */,
+				A000000000000000000033 /* SafariProfileManager.swift */,
+				A000000000000000000034 /* ProfilesSettingsView.swift */,
+				A000000000000000000046 /* TrafficControl.swift */,
+				A000000000000000000047 /* DefaultBrowserRouter.swift */,
+				A000000000000000000048 /* TrafficControlSettingsView.swift */,
+				A00000000000000000005A /* Diagnostics.swift */,
+				A00000000000000000005B /* DiagnosticsView.swift */,
+				A0000000000000000000E1 /* ToastHUD.swift */,
 				A00000000000000000000004 /* Info.plist */,
 				A00000000000000000000005 /* Arklike.entitlements */,
 			);
@@ -253,6 +262,15 @@
 				A000000000000000000029 /* NotificationHUD.swift in Sources */,
 				A000000000000000000028 /* ClipboardService.swift in Sources */,
 				A000000000000000000021 /* URLParser.swift in Sources */,
+				A00000000000000000003C /* Profiles.swift in Sources */,
+				A00000000000000000003D /* SafariProfileManager.swift in Sources */,
+				A00000000000000000003E /* ProfilesSettingsView.swift in Sources */,
+				A000000000000000000050 /* TrafficControl.swift in Sources */,
+				A000000000000000000051 /* DefaultBrowserRouter.swift in Sources */,
+				A000000000000000000052 /* TrafficControlSettingsView.swift in Sources */,
+				A000000000000000000064 /* Diagnostics.swift in Sources */,
+				A000000000000000000065 /* DiagnosticsView.swift in Sources */,
+				A0000000000000000000E2 /* ToastHUD.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
