@@ -71,7 +71,7 @@ cask "$TAP_CASK_TOKEN" do
 end
 EOF
 
-if git diff --quiet -- "$TAP_CASK_PATH"; then
+if [[ -z "$(git status --porcelain -- "$TAP_CASK_PATH")" ]]; then
   echo "Homebrew cask is already up to date"
   exit 0
 fi
