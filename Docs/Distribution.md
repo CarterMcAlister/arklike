@@ -17,9 +17,11 @@ On pushes to `main`, `release-please` checks conventional commits and opens or u
 1. Updates `Arklike/Info.plist` through release-please.
 2. Creates a GitHub Release and tag.
 3. Builds `Arklike.app` on a macOS runner.
-4. Signs, notarizes, staples, and zips the app.
-5. Uploads `Arklike-<version>.zip` and its `.sha256` file to the release.
-6. Updates the Homebrew cask in the tools tap when tap secrets are configured.
+4. Imports the Developer ID certificate with `apple-actions/import-codesign-certs`.
+5. Signs, notarizes, staples, and validates the app with Apple's `codesign`, `notarytool`, and `stapler`.
+6. Zips the app and calculates SHA256.
+7. Uploads `Arklike-<version>.zip` and its `.sha256` file to the release.
+8. Updates the Homebrew cask in the tools tap when tap secrets are configured.
 
 Use conventional commits for versioning:
 
@@ -52,7 +54,6 @@ Configure these in the Arklike repository settings:
 
 Optional:
 
-- `MACOS_SIGNING_IDENTITY`: Explicit signing identity, for example `Developer ID Application: Your Name (TEAMID)`. If omitted, the workflow uses the first matching Developer ID Application identity.
 - `RELEASE_PLEASE_TOKEN`: A fine-grained PAT with repo contents and pull request access. If omitted, `GITHUB_TOKEN` is used.
 
 ## Homebrew Tap Secrets and Variables
@@ -84,6 +85,8 @@ base64 -i DeveloperIDApplication.p12 | pbcopy
 ```
 
 Paste the copied value into `MACOS_CERTIFICATE_P12`.
+
+The workflow imports this certificate with `apple-actions/import-codesign-certs@v6`, signs with hardened runtime, submits the app to Apple's notary service with `notarytool`, and staples the notarization ticket before creating the release zip.
 
 ## Sandbox Posture
 

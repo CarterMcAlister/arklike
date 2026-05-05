@@ -52,7 +52,6 @@ jobs:
       BUILD_NUMBER: ${{ github.run_number }}
       MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
       MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
-      MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
       APPLE_ID: ${{ secrets.APPLE_ID }}
       APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
       APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
@@ -79,28 +78,55 @@ jobs:
           done
           exit "$missing"
 
-      - name: Import Developer ID certificate
+      - name: Build unsigned release app
+        id: build
         run: |
-          CERTIFICATE_PATH="$RUNNER_TEMP/developer-id-application.p12"
-          KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
-          KEYCHAIN_PASSWORD="$(uuidgen)"
+          VERSION="${VERSION#v}" Scripts/package-release.sh --build
 
-          if ! echo "$MACOS_CERTIFICATE_P12" | base64 --decode > "$CERTIFICATE_PATH" 2>/dev/null; then
-            echo "$MACOS_CERTIFICATE_P12" | base64 -D > "$CERTIFICATE_PATH"
+      - name: Import Developer ID certificate
+        uses: apple-actions/import-codesign-certs@v6
+        with:
+          p12-file-base64: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          p12-password: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+
+      - name: Sign, notarize, staple, and validate app
+        run: |
+          APP_PATH="${{ steps.build.outputs.app_path }}"
+          NOTARY_ZIP="$RUNNER_TEMP/Arklike-notary.zip"
+          SIGNING_IDENTITY="$(security find-identity -v -p codesigning | awk -v team="$APPLE_TEAM_ID" '/Developer ID Application/ && index($0, team) { print $2; exit }')"
+
+          if [[ -z "$SIGNING_IDENTITY" ]]; then
+            echo "::error::Could not find imported Developer ID Application identity for team $APPLE_TEAM_ID"
+            security find-identity -v -p codesigning || true
+            exit 1
           fi
 
-          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security import "$CERTIFICATE_PATH" -P "$MACOS_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
-          security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | sed 's/[" ]//g')
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security find-identity -v -p codesigning
+          codesign \
+            --force \
+            --deep \
+            --timestamp \
+            --options runtime \
+            --entitlements Arklike/Arklike.entitlements \
+            --sign "$SIGNING_IDENTITY" \
+            "$APP_PATH"
+
+          codesign --verify --strict --verbose=2 "$APP_PATH"
+          ditto -c -k --keepParent "$APP_PATH" "$NOTARY_ZIP"
+
+          xcrun notarytool submit "$NOTARY_ZIP" \
+            --apple-id "$APPLE_ID" \
+            --team-id "$APPLE_TEAM_ID" \
+            --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+            --wait
+
+          xcrun stapler staple "$APP_PATH"
+          xcrun stapler validate "$APP_PATH"
+          spctl --assess --type execute --verbose=4 "$APP_PATH"
 
       - name: Package signed and notarized app
         id: package
         run: |
-          VERSION="${VERSION#v}" Scripts/package-release.sh
+          VERSION="${VERSION#v}" APP_PATH="${{ steps.build.outputs.app_path }}" Scripts/package-release.sh --package
 
       - name: Upload app artifact to GitHub Release
         run: |
