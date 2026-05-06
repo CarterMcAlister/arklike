@@ -6,39 +6,59 @@ import SwiftUI
 final class CommandPaletteController: ObservableObject {
     static let shared = CommandPaletteController()
 
-    @Published var query: String = "" {
-        didSet { refreshItems() }
+    let state = CommandPanelState()
+
+    var query: String {
+        get { state.query }
+        set { updateInputText(newValue) }
     }
-    @Published private(set) var items: [CommandPaletteItem] = []
-    @Published var selectedIndex: Int = 0
+    var items: [CommandPaletteItem] { state.suggestions }
+    var selectedIndex: Int {
+        get { state.selectedIndex }
+        set { state.selectedIndex = newValue }
+    }
 
     private var panel: NSPanel?
     private var keyMonitor: Any?
     private var outsideClickMonitor: Any?
     private var dismissEventTap: CFMachPort?
     private var dismissEventTapSource: CFRunLoopSource?
-    private var recentURLs: [URL] = []
-    private var cachedSafariTabs: [SafariTabSnapshot] = []
     private var tabRefreshWorkItem: DispatchWorkItem?
-    private let providers: [CommandPaletteProviding] = [
-        SearchShortcutCommandProvider(),
-        BasicURLSearchProvider(),
-        SafariTabCommandProvider(),
-        ProfileCommandProvider(),
-        TrafficRuleCommandProvider(),
-        RecentURLCommandProvider(),
-        SettingsCommandProvider()
-    ]
+    private var clipboardURL: URL?
+    private var webSuggestions: [String] = []
+
+    private let recentStore = CommandPanelRecentStore.shared
+    private let liveTabStore = SafariLiveTabStore.shared
+    private let bookmarkStore = SafariBookmarkStore.shared
+    private let suggestionManager: CommandPanelSuggestionManager
 
     private init() {
+        suggestionManager = CommandPanelSuggestionManager(providers: [
+            PasteAndGoCommandProvider(),
+            FrequentItemsCommandProvider(),
+            SearchShortcutCommandProvider(),
+            BasicURLSearchProvider(),
+            SafariTabCommandProvider(),
+            SafariBookmarkProvider(),
+            RecentURLCommandProvider(),
+            SearchHistoryCommandProvider(),
+            WebSuggestionCommandProvider(),
+            ProfileCommandProvider(),
+            TrafficRuleCommandProvider(),
+            SettingsCommandProvider()
+        ])
         refreshItems()
     }
 
     func show() {
         tabRefreshWorkItem?.cancel()
-        cachedSafariTabs = []
-        selectedIndex = 0
-        query = ""
+        liveTabStore.reset()
+        webSuggestions = []
+        clipboardURL = Self.clipboardURLForPanelOpen()
+        bookmarkStore.refreshIfNeeded(force: false)
+        _ = ProfileStore.shared.refreshFromSafari()
+        liveTabStore.refresh()
+        state.resetForOpen()
         refreshItems()
 
         let panel = panel ?? makePanel()
@@ -62,6 +82,7 @@ final class CommandPaletteController: ObservableObject {
     func dismiss(returnFocusToSafari: Bool = true) {
         tabRefreshWorkItem?.cancel()
         tabRefreshWorkItem = nil
+        CommandPanelWebSuggestionService.shared.cancel()
         removeKeyMonitor()
         removeOutsideClickMonitor()
         removeDismissEventTap()
@@ -75,88 +96,236 @@ final class CommandPaletteController: ObservableObject {
         }
     }
 
+    func updateInputText(_ text: String) {
+        state.currentInputText = text
+        if state.mode == .search {
+            scheduleWebSuggestions(for: state.query)
+        }
+        refreshItems()
+    }
+
     func moveSelection(delta: Int) {
-        guard !items.isEmpty else { return }
-        selectedIndex = min(max(selectedIndex + delta, 0), items.count - 1)
+        state.moveSelection(delta: delta)
     }
 
     func select(index: Int) {
-        guard items.indices.contains(index) else { return }
-        selectedIndex = index
+        state.select(index: index)
     }
 
     func performSelected() {
-        guard items.indices.contains(selectedIndex) else { return }
-        perform(items[selectedIndex])
+        guard let item = state.selectedSuggestion else { return }
+        perform(item)
     }
 
     func perform(_ item: CommandPaletteItem) {
+        suggestionManager.recordSelection(item, query: state.query)
         switch item.action {
         case .openURL(let url):
-            remember(url)
-            let preferredWindowId = FrontmostSafariMonitor.shared.activeWindowForSafariAction()?.safariWindowId
-            _ = SafariAutomation.shared.openURLInNewTab(url, preferredWindowId: preferredWindowId)
-            dismiss(returnFocusToSafari: false)
+            openURL(url, title: item.title)
         case .search(let query):
-            if let url = SearchEngineService.shared.searchURL(for: query) {
-                remember(url)
-                let preferredWindowId = FrontmostSafariMonitor.shared.activeWindowForSafariAction()?.safariWindowId
-                _ = SafariAutomation.shared.openURLInNewTab(url, preferredWindowId: preferredWindowId)
-            }
-            dismiss(returnFocusToSafari: false)
+            let searchText = state.autocompleteAccepted && !state.query.isEmpty ? state.query : query
+            searchWeb(searchText)
         case .switchToSafariTab(let windowId, let tabIndex):
             if let windowId, let tabIndex {
                 _ = SafariAutomation.shared.activateTab(windowId: windowId, tabIndex: tabIndex)
             } else if let windowId {
                 _ = SafariAutomation.shared.activateWindow(windowId: windowId)
             }
+            if let url = item.representedURL { remember(url, title: item.title) }
+            scheduleSafariTabRefresh()
             dismiss(returnFocusToSafari: false)
-        case .openProfile:
+        case .openProfile(let number):
+            switch SafariProfileManager.shared.switchToProfile(number: number) {
+            case .success:
+                NotificationHUD.show(title: "Safari Profile", message: "Opened profile \(number).")
+            case .failure(let error):
+                NotificationHUD.show(title: "Could not open profile \(number)", message: error.localizedDescription)
+            }
             dismiss(returnFocusToSafari: false)
         case .showTrafficRule:
-            break
-        case .openSettings:
             dismiss(returnFocusToSafari: false)
-            SettingsWindowController.shared.show()
+            SettingsWindowController.shared.show(destination: .trafficControl)
+        case .openSettings(let destination):
+            dismiss(returnFocusToSafari: false)
+            SettingsWindowController.shared.show(destination: destination)
+        case .copyURL(let url):
+            ClipboardService.copy(url.absoluteString)
+            NotificationHUD.show(title: "Copied URL", message: url.absoluteString)
+            if state.mode == .actions { state.endActions(); refreshItems() }
+        case .copyText(let text):
+            ClipboardService.copy(text)
+            NotificationHUD.show(title: "Copied", message: text)
+            if state.mode == .actions { state.endActions(); refreshItems() }
+        case .removeRecent(let url):
+            recentStore.remove(url: url)
+            if state.mode == .actions { state.endActions() }
+            refreshItems()
+        case .removeSuggestion:
+            if state.mode == .actions { state.endActions() }
+            refreshItems()
+        case .toggleWebSuggestions:
+            AppSettings.shared.webSearchSuggestionsEnabled.toggle()
+            refreshItems()
+        case .toggleDuplicateTabSwitching:
+            AppSettings.shared.switchToExistingSafariTabInsteadOfOpeningDuplicate.toggle()
+            refreshItems()
+        case .clearRecents:
+            recentStore.clear()
+            refreshItems()
+        case .clearSearchHistory:
+            CommandPanelSearchHistoryStore.shared.clear()
+            refreshItems()
+        case .refreshSafariBookmarks:
+            bookmarkStore.reload(force: true)
+            refreshItems()
+        case .activateScope(let scope):
+            state.activeScope = scope == .all ? nil : scope
+            state.endScopePicker()
+            refreshItems()
+        case .acceptAutocomplete(let text):
+            state.autocompleteText = text
+            state.acceptAutocomplete()
+            refreshItems()
         case .noop:
             break
         }
     }
 
+    func performDirectWebSearch() {
+        // SupaSidebar only searches accepted autocomplete; otherwise Cmd+Return uses raw typed text.
+        searchWeb(state.query)
+    }
+
+    func openActionsForSelected() {
+        guard state.mode == .search, let selected = state.selectedSuggestion else { return }
+        state.beginActions(for: selected)
+        refreshItems()
+    }
+
+    func acceptAutocomplete() {
+        state.acceptAutocomplete()
+        refreshItems()
+    }
+
+    func rejectAutocomplete() {
+        state.rejectAutocomplete()
+        refreshItems()
+    }
+
+    private func openURL(_ url: URL, title: String? = nil) {
+        if AppSettings.shared.switchToExistingSafariTabInsteadOfOpeningDuplicate,
+           let tab = liveTabStore.matchingTab(for: url) {
+            _ = SafariAutomation.shared.activateTab(windowId: tab.windowId, tabIndex: tab.tabIndex)
+        } else {
+            let preferredWindowId = FrontmostSafariMonitor.shared.activeWindowForSafariAction()?.safariWindowId
+            _ = SafariAutomation.shared.openURLInNewTab(url, preferredWindowId: preferredWindowId)
+        }
+        remember(url, title: title)
+        scheduleSafariTabRefresh()
+        dismiss(returnFocusToSafari: false)
+    }
+
+    private func searchWeb(_ query: String) {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        CommandPanelSearchHistoryStore.shared.record(trimmed)
+        if let url = SearchEngineService.shared.searchURL(for: trimmed) {
+            openURL(url, title: "Search: \(trimmed)")
+        } else {
+            dismiss(returnFocusToSafari: false)
+        }
+    }
+
     private func refreshItems() {
-        let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        let context = CommandPaletteContext(
+        let context = CommandPanelContext(
             safariSnapshot: FrontmostSafariMonitor.shared.snapshot,
-            recentURLs: recentURLs,
-            safariTabs: cachedSafariTabs
+            recentItems: recentStore.items,
+            safariTabs: liveTabStore.tabs,
+            safariTabError: liveTabStore.lastError,
+            clipboardURL: clipboardURL,
+            webSuggestions: webSuggestions,
+            bookmarks: bookmarkStore.bookmarks,
+            bookmarkError: bookmarkStore.lastError
         )
-        items = providers
-            .flatMap { provider in provider.items(for: normalizedQuery, context: context) }
-            .sorted { lhs, rhs in
-                if lhs.rank != rhs.rank { return lhs.rank < rhs.rank }
-                return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
+        state.setSuggestions(suggestionManager.suggestions(state: state, context: context))
+        updateAutocomplete()
+        objectWillChange.send()
+    }
+
+    private func updateAutocomplete() {
+        guard state.mode == .search else {
+            state.autocompleteText = ""
+            return
+        }
+        let trimmed = state.query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !state.autocompleteAccepted else {
+            state.autocompleteText = ""
+            return
+        }
+        let candidates = state.suggestions.compactMap { suggestion -> String? in
+            switch suggestion.kind {
+            case .searchHistory, .webSuggestion:
+                suggestion.title
+            case .url, .bookmark, .historyOrRecent, .safariTab:
+                suggestion.representedURL?.absoluteString ?? suggestion.title
+            case .siteShortcut:
+                suggestion.title
+            default:
+                nil
             }
-        selectedIndex = min(selectedIndex, max(items.count - 1, 0))
+        }
+        if let match = candidates.first(where: { $0.count > trimmed.count && $0.lowercased().hasPrefix(trimmed.lowercased()) }) {
+            state.autocompleteText = match
+        } else {
+            state.autocompleteText = ""
+        }
+    }
+
+    private func scheduleWebSuggestions(for query: String) {
+        CommandPanelWebSuggestionService.shared.suggestions(for: query) { [weak self] suggestions in
+            guard let self else { return }
+            self.webSuggestions = suggestions
+            self.refreshItems()
+        }
     }
 
     private func scheduleSafariTabRefresh() {
+        tabRefreshWorkItem?.cancel()
         let workItem = DispatchWorkItem { [weak self] in
             Task { @MainActor in
                 guard let self, self.panel?.isVisible == true else { return }
-                if case .success(let windows) = SafariAutomation.shared.listWindowsAndTabs() {
-                    self.cachedSafariTabs = windows.flatMap(\.tabs)
-                    self.refreshItems()
-                }
+                self.liveTabStore.refresh()
+                self.refreshItems()
+                self.scheduleRepeatingSafariTabRefresh()
             }
         }
         tabRefreshWorkItem = workItem
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: workItem)
     }
 
-    private func remember(_ url: URL) {
-        recentURLs.removeAll { $0 == url }
-        recentURLs.insert(url, at: 0)
-        recentURLs = Array(recentURLs.prefix(50))
+    private func scheduleRepeatingSafariTabRefresh() {
+        tabRefreshWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            Task { @MainActor in
+                guard let self, self.panel?.isVisible == true else { return }
+                self.liveTabStore.refresh()
+                self.refreshItems()
+                self.scheduleRepeatingSafariTabRefresh()
+            }
+        }
+        tabRefreshWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5, execute: workItem)
+    }
+
+    private func remember(_ url: URL, title: String? = nil) {
+        let window = FrontmostSafariMonitor.shared.activeWindowForSafariAction()
+        recentStore.record(url: url, title: title, windowId: window?.safariWindowId, profileHint: window?.profileHint)
+    }
+
+    private static func clipboardURLForPanelOpen() -> URL? {
+        guard let text = NSPasteboard.general.string(forType: .string) else { return nil }
+        if case .url(let url) = URLParser().parse(text) { return url }
+        return nil
     }
 
     private func restoreSafariFocus() {
@@ -171,6 +340,7 @@ final class CommandPaletteController: ObservableObject {
         removeKeyMonitor()
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self else { return event }
+            let flags = event.modifierFlags.intersection([.command, .shift, .option, .control])
             switch event.keyCode {
             case 126:
                 self.moveSelection(delta: -1)
@@ -179,14 +349,72 @@ final class CommandPaletteController: ObservableObject {
                 self.moveSelection(delta: 1)
                 return nil
             case 36, 76:
-                self.performSelected()
+                if flags.contains(.command) {
+                    self.performDirectWebSearch()
+                } else if flags.contains(.option) {
+                    self.openActionsForSelected()
+                } else {
+                    self.performSelected()
+                }
                 return nil
             case 53:
-                self.dismiss()
+                self.handleEscapeKey()
                 return nil
+            case 48:
+                if flags.contains(.shift) {
+                    self.state.cycleScope()
+                    self.refreshItems()
+                    return nil
+                }
+                if self.state.mode == .search, let scope = CommandPanelSearchScope.matchingKeyword(self.state.query) {
+                    self.state.activeScope = scope == .all ? nil : scope
+                    self.state.query = ""
+                    self.refreshItems()
+                    return nil
+                }
+                return event
+            case 51:
+                if !self.state.autocompleteText.isEmpty {
+                    self.rejectAutocomplete()
+                    return nil
+                }
+                if self.state.mode == .search, self.state.query.isEmpty, self.state.activeScope != nil {
+                    self.state.clearScope()
+                    self.refreshItems()
+                    return nil
+                }
+                return event
+            case 124:
+                if !self.state.autocompleteText.isEmpty {
+                    self.acceptAutocomplete()
+                    return nil
+                }
+                return event
+            case 44:
+                if self.state.mode == .search, flags.isEmpty, self.state.query.isEmpty {
+                    self.state.beginScopePicker()
+                    self.refreshItems()
+                    return nil
+                }
+                return event
             default:
                 return event
             }
+        }
+    }
+
+    private func handleEscapeKey() {
+        if state.mode == .scopePicker {
+            state.endScopePicker()
+            refreshItems()
+        } else if state.mode == .actions {
+            state.endActions()
+            refreshItems()
+        } else if state.activeScope != nil {
+            state.clearScope()
+            refreshItems()
+        } else {
+            dismiss()
         }
     }
 
@@ -260,7 +488,7 @@ final class CommandPaletteController: ObservableObject {
         if type == .keyDown {
             let keyCode = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
             if keyCode == 53 {
-                dismiss()
+                handleEscapeKey()
                 return nil
             }
             return Unmanaged.passUnretained(event)
@@ -333,10 +561,6 @@ final class CommandPaletteController: ObservableObject {
             y: quartzOrigin.y + windowSize.height / 2
         )
 
-        // AX window positions use Quartz/display coordinates (top-left origin per
-        // display). NSWindow positioning uses AppKit screen coordinates
-        // (bottom-left origin). Convert through the display that contains the
-        // Safari window center so centering works on every monitor arrangement.
         for screen in NSScreen.screens {
             guard let displayID = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID else { continue }
             let displayBounds = CGDisplayBounds(displayID)
@@ -350,7 +574,6 @@ final class CommandPaletteController: ObservableObject {
             )
         }
 
-        // Single-display fallback if display matching fails.
         if let screen = NSScreen.main {
             return NSPoint(
                 x: screen.frame.minX + quartzCenter.x,
@@ -358,12 +581,6 @@ final class CommandPaletteController: ObservableObject {
             )
         }
         return nil
-    }
-}
-
-extension SettingsDestination: CaseIterable {
-    static var allCases: [SettingsDestination] {
-        [.general, .shortcuts, .profiles, .commandPalette, .trafficControl, .permissions]
     }
 }
 

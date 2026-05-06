@@ -4,87 +4,117 @@ struct SettingsView: View {
     @StateObject private var permissions = PermissionsManager.shared
     @StateObject private var appSettings = AppSettings.shared
     @StateObject private var safariMonitor = FrontmostSafariMonitor.shared
+    @StateObject private var bookmarkStore = SafariBookmarkStore.shared
+    private let initialDestination: SettingsDestination
+
+    init(initialDestination: SettingsDestination = .general) {
+        self.initialDestination = initialDestination
+    }
 
     var body: some View {
-        ScrollView {
-        VStack(alignment: .leading, spacing: 18) {
-            header
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    header
+                        .id(SettingsDestination.general)
 
-            PermissionRow(
-                title: "Accessibility",
-                status: permissions.snapshot.accessibility,
-                detail: "Needed to intercept Safari shortcuts, track the active Safari window, and automate Safari menu actions for profile switching and the native sidebar toggle.",
-                primaryButtonTitle: "Request Permission",
-                secondaryButtonTitle: "Open Accessibility Settings",
-                primaryAction: { permissions.requestAccessibilityPermission() },
-                secondaryAction: { permissions.openAccessibilitySettings() }
-            )
+                    Group {
+                        PermissionRow(
+                            title: "Accessibility",
+                            status: permissions.snapshot.accessibility,
+                            detail: "Needed to intercept Safari shortcuts, track the active Safari window, and automate Safari menu actions for profile switching and the native sidebar toggle.",
+                            primaryButtonTitle: "Request Permission",
+                            secondaryButtonTitle: "Open Accessibility Settings",
+                            primaryAction: { permissions.requestAccessibilityPermission() },
+                            secondaryAction: { permissions.openAccessibilitySettings() }
+                        )
 
-            PermissionRow(
-                title: "Apple Events for Safari",
-                status: permissions.snapshot.appleEventsSafari,
-                detail: "Needed to read the current Safari tab URL and open or activate Safari tabs/windows. The command palette can still open without this, but Safari tab/profile actions cannot run.",
-                primaryButtonTitle: "Request Permission",
-                secondaryButtonTitle: "Open Automation Settings",
-                primaryAction: { permissions.requestAppleEventsPermissionForSafari() },
-                secondaryAction: { permissions.openAutomationSettings() }
-            )
+                        PermissionRow(
+                            title: "Apple Events for Safari",
+                            status: permissions.snapshot.appleEventsSafari,
+                            detail: "Needed to read the current Safari tab URL and open or activate Safari tabs/windows. The command palette can still open without this, but Safari tab/profile actions cannot run.",
+                            primaryButtonTitle: "Request Permission",
+                            secondaryButtonTitle: "Open Automation Settings",
+                            primaryAction: { permissions.requestAppleEventsPermissionForSafari() },
+                            secondaryAction: { permissions.openAutomationSettings() }
+                        )
 
-            PermissionRow(
-                title: "Default Browser",
-                status: permissions.snapshot.defaultBrowser,
-                detail: defaultBrowserDetail,
-                primaryButtonTitle: "Make Arklike Default",
-                secondaryButtonTitle: "Open Default Browser Settings",
-                primaryAction: { permissions.setAsDefaultBrowser() },
-                secondaryAction: { permissions.openDefaultBrowserSettings() }
-            )
+                        PermissionRow(
+                            title: "Default Browser",
+                            status: permissions.snapshot.defaultBrowser,
+                            detail: defaultBrowserDetail,
+                            primaryButtonTitle: "Make Arklike Default",
+                            secondaryButtonTitle: "Open Default Browser Settings",
+                            primaryAction: { permissions.setAsDefaultBrowser() },
+                            secondaryAction: { permissions.openDefaultBrowserSettings() }
+                        )
 
-            Divider()
+                        PermissionRow(
+                            title: "Full Disk Access for Safari Bookmarks",
+                            status: bookmarkStore.lastError == nil ? .granted : .denied,
+                            detail: "Needed to read Safari’s local bookmark index automatically for command-menu bookmark search. After granting access, click Refresh Safari Bookmarks or reopen Arklike.",
+                            primaryButtonTitle: "Refresh Safari Bookmarks",
+                            secondaryButtonTitle: "Open Full Disk Access Settings",
+                            primaryAction: { bookmarkStore.reload(force: true) },
+                            secondaryAction: { permissions.openFullDiskAccessSettings() }
+                        )
+                    }
+                    .id(SettingsDestination.permissions)
 
-            safariShortcutOverridesSection
+                    Divider()
 
-            ShortcutSettingsView()
-                .padding(14)
-                .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 12))
+                    safariShortcutOverridesSection
+                        .id(SettingsDestination.commandPalette)
 
-            Divider()
+                    ShortcutSettingsView()
+                        .id(SettingsDestination.shortcuts)
+                        .padding(14)
+                        .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 12))
 
-            if isDevMode {
-                safariMonitorSection
-            }
+                    Divider()
 
-            ProfilesSettingsView()
-                .padding(14)
-                .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 12))
+                    if isDevMode { safariMonitorSection }
 
-            TrafficControlSettingsView()
-                .padding(14)
-                .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 12))
+                    ProfilesSettingsView()
+                        .id(SettingsDestination.profiles)
+                        .padding(14)
+                        .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 12))
 
-            Divider()
+                    TrafficControlSettingsView()
+                        .id(SettingsDestination.trafficControl)
+                        .padding(14)
+                        .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 12))
 
-            if isDevMode {
-                DiagnosticsView()
-                    .padding(14)
-                    .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 12))
-            }
+                    Divider()
 
-            HStack {
-                Button("Refresh") {
-                    permissions.refresh()
-                    safariMonitor.refresh(reason: "settings refresh")
+                    if isDevMode {
+                        DiagnosticsView()
+                            .padding(14)
+                            .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 12))
+                    }
+
+                    HStack {
+                        Button("Refresh") {
+                            permissions.refresh()
+                            safariMonitor.refresh(reason: "settings refresh")
+                            bookmarkStore.refreshIfNeeded(force: false)
+                        }
+                        Spacer()
+                    }
                 }
-                Spacer()
+                .padding(24)
             }
-        }
-        .padding(24)
-        }
-        .frame(width: 720, height: 760)
-        .onAppear {
-            permissions.refresh()
-            safariMonitor.start()
-            safariMonitor.refresh(reason: "settings appear")
+            .frame(width: 720, height: 760)
+            .onAppear {
+                permissions.refresh()
+                safariMonitor.start()
+                safariMonitor.refresh(reason: "settings appear")
+                DispatchQueue.main.async { proxy.scrollTo(initialDestination, anchor: .top) }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .arklikeSettingsDestinationRequested)) { notification in
+                guard let destination = notification.object as? SettingsDestination else { return }
+                withAnimation { proxy.scrollTo(destination, anchor: .top) }
+            }
         }
     }
 
@@ -101,6 +131,8 @@ struct SettingsView: View {
                 .disabled(!appSettings.safariShortcutOverridesEnabled)
             Toggle("Enable Ctrl+number profile shortcuts", isOn: $appSettings.profileShortcutsEnabled)
                 .disabled(!appSettings.safariShortcutOverridesEnabled)
+            Toggle("Show Google web suggestions in command palette", isOn: $appSettings.webSearchSuggestionsEnabled)
+            Toggle("Switch to existing Safari tabs instead of opening duplicates", isOn: $appSettings.switchToExistingSafariTabInsteadOfOpeningDuplicate)
             Text("These flags authorize Arklike to act only when Safari is frontmost. Rebind the actual key combinations below.")
                 .font(.callout)
                 .foregroundStyle(.secondary)

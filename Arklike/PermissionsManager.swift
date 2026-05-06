@@ -73,6 +73,10 @@ final class PermissionsManager: ObservableObject {
         openSettingsURL("x-apple.systempreferences:com.apple.preference.security?Privacy_Automation")
     }
 
+    func openFullDiskAccessSettings() {
+        openSettingsURL("x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles")
+    }
+
     func setAsDefaultBrowser() {
         LSSetDefaultHandlerForURLScheme("http" as CFString, Self.arklikeBundleIdentifier as CFString)
         LSSetDefaultHandlerForURLScheme("https" as CFString, Self.arklikeBundleIdentifier as CFString)

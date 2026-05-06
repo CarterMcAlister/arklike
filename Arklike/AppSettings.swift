@@ -24,6 +24,14 @@ final class AppSettings: ObservableObject {
         didSet { defaults.set(profileShortcutsEnabled, forKey: Keys.profileShortcutsEnabled) }
     }
 
+    @Published var webSearchSuggestionsEnabled: Bool {
+        didSet { defaults.set(webSearchSuggestionsEnabled, forKey: Keys.webSearchSuggestionsEnabled) }
+    }
+
+    @Published var switchToExistingSafariTabInsteadOfOpeningDuplicate: Bool {
+        didSet { defaults.set(switchToExistingSafariTabInsteadOfOpeningDuplicate, forKey: Keys.switchToExistingSafariTabInsteadOfOpeningDuplicate) }
+    }
+
     private let defaults: UserDefaults
 
     private init(defaults: UserDefaults = .standard) {
@@ -33,6 +41,8 @@ final class AppSettings: ObservableObject {
         copyURLShortcutEnabled = defaults.object(forKey: Keys.copyURLShortcutEnabled) as? Bool ?? true
         sidebarShortcutEnabled = defaults.object(forKey: Keys.sidebarShortcutEnabled) as? Bool ?? true
         profileShortcutsEnabled = defaults.object(forKey: Keys.profileShortcutsEnabled) as? Bool ?? true
+        webSearchSuggestionsEnabled = defaults.object(forKey: Keys.webSearchSuggestionsEnabled) as? Bool ?? false
+        switchToExistingSafariTabInsteadOfOpeningDuplicate = defaults.object(forKey: Keys.switchToExistingSafariTabInsteadOfOpeningDuplicate) as? Bool ?? true
     }
 
     func resetShortcutOverrideDefaults() {
@@ -41,6 +51,8 @@ final class AppSettings: ObservableObject {
         copyURLShortcutEnabled = true
         sidebarShortcutEnabled = true
         profileShortcutsEnabled = true
+        webSearchSuggestionsEnabled = false
+        switchToExistingSafariTabInsteadOfOpeningDuplicate = true
     }
 }
 
@@ -50,4 +62,6 @@ private enum Keys {
     static let copyURLShortcutEnabled = "copyURLShortcutEnabled"
     static let sidebarShortcutEnabled = "sidebarShortcutEnabled"
     static let profileShortcutsEnabled = "profileShortcutsEnabled"
+    static let webSearchSuggestionsEnabled = "webSearchSuggestionsEnabled"
+    static let switchToExistingSafariTabInsteadOfOpeningDuplicate = "switchToExistingSafariTabInsteadOfOpeningDuplicate"
 }

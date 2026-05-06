@@ -1,195 +1,271 @@
 import Foundation
 
-struct BasicURLSearchProvider: CommandPaletteProviding {
-    let providerName = "URL/Search"
+private extension CommandPanelSuggestion {
+    static func urlActions(_ url: URL) -> [CommandPanelAlternateAction] {
+        [CommandPanelAlternateAction(id: "copy-url", title: "Copy URL", subtitle: url.absoluteString, iconSystemName: "doc.on.doc", action: .copyURL(url))]
+    }
+}
 
-    func items(for query: String, context: CommandPaletteContext) -> [CommandPaletteItem] {
-        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else {
-            return [CommandPaletteItem(
-                id: "search-empty",
-                title: "Type a URL or search query",
-                subtitle: "Press Return after entering a destination",
-                kind: .search,
-                rank: CommandPaletteRanking.rank(for: .search),
-                representedURL: nil,
-                action: .noop("Enter a query")
-            )]
+struct FrequentItemsCommandProvider: CommandPanelSuggestionProviding {
+    let providerName = "Frequent Items"
+
+    func suggestions(for query: String, state: CommandPanelState, context: CommandPanelContext) -> [CommandPanelSuggestion] {
+        guard query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              state.mode == .search,
+              state.activeScope == nil || state.activeScope == .all else { return [] }
+        let records = CommandPanelUsageStore.shared.topRecords(limit: 10)
+        return records.compactMap { record in
+            if let recent = context.recentItems.first(where: { "recent-\($0.url.absoluteString)" == record.id }) {
+                return CommandPanelSuggestion(
+                    id: record.id,
+                    title: recent.title ?? recent.url.absoluteString,
+                    subtitle: "Frequently used • \(recent.url.absoluteString)",
+                    kind: .historyOrRecent,
+                    scope: .recents,
+                    representedURL: recent.url,
+                    primaryAction: .openURL(recent.url),
+                    alternateActions: CommandPanelSuggestion.urlActions(recent.url),
+                    basePriority: 2,
+                    lastUsedAt: record.lastUsedAt
+                )
+            }
+            if let bookmark = context.bookmarks.first(where: { $0.id == record.id }) {
+                return CommandPanelSuggestion(
+                    id: record.id,
+                    title: bookmark.title,
+                    subtitle: ["Frequently used", bookmark.url.absoluteString, bookmark.path].compactMap { $0 }.joined(separator: " • "),
+                    kind: .bookmark,
+                    scope: .bookmarks,
+                    representedURL: bookmark.url,
+                    primaryAction: .openURL(bookmark.url),
+                    alternateActions: CommandPanelSuggestion.urlActions(bookmark.url),
+                    basePriority: 2,
+                    lastUsedAt: record.lastUsedAt
+                )
+            }
+            if let tab = context.safariTabs.first(where: { "safari-tab-\($0.windowId)-\($0.tabIndex)" == record.id }) {
+                let title = tab.title ?? tab.url?.absoluteString ?? "Untitled Safari Tab"
+                return CommandPanelSuggestion(
+                    id: record.id,
+                    title: title,
+                    subtitle: "Frequently used • Safari tab",
+                    kind: .safariTab,
+                    scope: .liveTabs,
+                    representedURL: tab.url,
+                    primaryAction: .switchToSafariTab(windowId: tab.windowId, tabIndex: tab.tabIndex),
+                    alternateActions: tab.url.map(CommandPanelSuggestion.urlActions) ?? [],
+                    basePriority: 2,
+                    lastUsedAt: record.lastUsedAt
+                )
+            }
+            return nil
         }
+    }
+}
 
-        if case .url(let url) = URLParser().parse(trimmed) {
-            return [CommandPaletteItem(
-                id: "url-\(url.absoluteString)",
-                title: "Open \(url.absoluteString)",
-                subtitle: "Open in a new Safari tab",
-                kind: .url,
-                rank: CommandPaletteRanking.rank(for: .url),
-                representedURL: url,
-                action: .openURL(url)
-            )]
-        }
+struct PasteAndGoCommandProvider: CommandPanelSuggestionProviding {
+    let providerName = "Paste and Go"
 
-        return [CommandPaletteItem(
-            id: "search-\(trimmed)",
-            title: "Search for “\(trimmed)”",
-            subtitle: "Search the web",
-            kind: .search,
-            rank: CommandPaletteRanking.rank(for: .search),
-            representedURL: nil,
-            action: .search(trimmed)
+    func suggestions(for query: String, state: CommandPanelState, context: CommandPanelContext) -> [CommandPanelSuggestion] {
+        guard state.mode == .search, state.activeScope == nil || state.activeScope == .all, let url = context.clipboardURL else { return [] }
+        let normalizedClipboard = CommandPanelRecentStore.normalized(url)
+        let exactQueryURL: URL? = { if case .url(let parsed) = URLParser().parse(query) { return parsed }; return nil }()
+        if let exactQueryURL, CommandPanelRecentStore.normalized(exactQueryURL) == normalizedClipboard { return [] }
+        return [CommandPanelSuggestion(
+            id: "paste-and-go-\(url.absoluteString)",
+            title: "Paste and Go",
+            subtitle: url.absoluteString,
+            kind: .pasteAndGo,
+            scope: .all,
+            representedURL: url,
+            primaryAction: .openURL(url),
+            alternateActions: CommandPanelSuggestion.urlActions(url),
+            basePriority: -100
         )]
     }
+}
 
+struct BasicURLSearchProvider: CommandPanelSuggestionProviding {
+    let providerName = "URL/Search"
+
+    func suggestions(for query: String, state: CommandPanelState, context: CommandPanelContext) -> [CommandPanelSuggestion] {
+        guard state.activeScope == nil || state.activeScope == .all else { return [] }
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return [CommandPanelSuggestion(id: "placeholder-search-empty", title: "Start typing to search or paste a link", subtitle: "Search, enter a URL, switch Safari tabs, open bookmarks, or type / for scopes", kind: .search, scope: .all, representedURL: nil, primaryAction: .noop("Enter a query"), basePriority: 990)]
+        }
+        if case .url(let url) = URLParser().parse(trimmed) {
+            return [CommandPanelSuggestion(id: "url-\(url.absoluteString)", title: "Open \(url.absoluteString)", subtitle: "Open in a new Safari tab", kind: .url, scope: .all, representedURL: url, primaryAction: .openURL(url), alternateActions: CommandPanelSuggestion.urlActions(url), basePriority: CommandPaletteRanking.rank(for: .url))]
+        }
+        return [CommandPanelSuggestion(id: "search-\(trimmed)", title: "Search for “\(trimmed)”", subtitle: "Search the web", kind: .search, scope: .all, representedURL: nil, primaryAction: .search(trimmed), basePriority: CommandPaletteRanking.rank(for: .search))]
+    }
 }
 
 @MainActor
-struct SafariTabCommandProvider: CommandPaletteProviding {
+struct SafariTabCommandProvider: CommandPanelSuggestionProviding {
     let providerName = "Safari Tabs"
 
-    func items(for query: String, context: CommandPaletteContext) -> [CommandPaletteItem] {
-        context.safariTabs.compactMap { tab in
-                let title = tab.title ?? tab.url?.absoluteString ?? "Untitled Safari Tab"
-                let subtitle = [tab.url?.absoluteString, tab.isActive ? "Active" : nil]
-                    .compactMap { $0 }
-                    .joined(separator: " • ")
-                guard query.isEmpty
-                        || title.localizedCaseInsensitiveContains(query)
-                        || subtitle.localizedCaseInsensitiveContains(query) else { return nil }
-                return CommandPaletteItem(
-                    id: "safari-tab-\(tab.windowId)-\(tab.tabIndex)",
-                    title: title,
-                    subtitle: subtitle.isEmpty ? "Safari tab" : subtitle,
-                    kind: .safariTab,
-                    rank: CommandPaletteRanking.rank(for: .safariTab),
-                    representedURL: tab.url,
-                    action: .switchToSafariTab(windowId: tab.windowId, tabIndex: tab.tabIndex)
-                )
+    func suggestions(for query: String, state: CommandPanelState, context: CommandPanelContext) -> [CommandPanelSuggestion] {
+        guard state.activeScope == nil || state.activeScope == .all || state.activeScope == .liveTabs else { return [] }
+        if let error = context.safariTabError, context.safariTabs.isEmpty {
+            return [CommandPanelSuggestion(id: "safari-tabs-permission", title: "Safari tabs unavailable", subtitle: error.localizedDescription, kind: .permission, scope: .liveTabs, representedURL: nil, primaryAction: .noop(error.localizedDescription), basePriority: CommandPaletteRanking.rank(for: .permission))]
+        }
+        if context.safariTabs.isEmpty, state.activeScope == .liveTabs {
+            return [CommandPanelSuggestion(id: "safari-tabs-empty", title: "No Safari tabs found", subtitle: "Open tabs in Safari to switch to them here", kind: .permission, scope: .liveTabs, representedURL: nil, primaryAction: .noop("No tabs"), basePriority: 900)]
+        }
+        return context.safariTabs.map { tab in
+            let title = tab.title ?? tab.url?.absoluteString ?? "Untitled Safari Tab"
+            let subtitle = [tab.url?.absoluteString, tab.isActive ? "Active" : nil, "Window \(tab.windowId)"].compactMap { $0 }.joined(separator: " • ")
+            return CommandPanelSuggestion(id: "safari-tab-\(tab.windowId)-\(tab.tabIndex)", title: title, subtitle: subtitle.isEmpty ? "Safari tab" : subtitle, kind: .safariTab, scope: .liveTabs, representedURL: tab.url, primaryAction: .switchToSafariTab(windowId: tab.windowId, tabIndex: tab.tabIndex), alternateActions: tab.url.map(CommandPanelSuggestion.urlActions) ?? [], basePriority: CommandPaletteRanking.rank(for: .safariTab))
         }
     }
 }
 
-struct RecentURLCommandProvider: CommandPaletteProviding {
+struct RecentURLCommandProvider: CommandPanelSuggestionProviding {
     let providerName = "Recents"
 
-    func items(for query: String, context: CommandPaletteContext) -> [CommandPaletteItem] {
-        context.recentURLs.prefix(10).compactMap { url in
-            let text = url.absoluteString
-            guard query.isEmpty || text.localizedCaseInsensitiveContains(query) else { return nil }
-            return CommandPaletteItem(
-                id: "recent-\(text)",
-                title: text,
-                subtitle: "Recent Arklike URL",
-                kind: .historyOrRecent,
-                rank: CommandPaletteRanking.rank(for: .historyOrRecent),
-                representedURL: url,
-                action: .openURL(url)
-            )
+    func suggestions(for query: String, state: CommandPanelState, context: CommandPanelContext) -> [CommandPanelSuggestion] {
+        guard state.activeScope == nil || state.activeScope == .all || state.activeScope == .recents else { return [] }
+        if context.recentItems.isEmpty, state.activeScope == .recents {
+            return [CommandPanelSuggestion(id: "recents-empty", title: "No recent items yet", subtitle: "Open URLs or searches from Arklike to see them here", kind: .permission, scope: .recents, representedURL: nil, primaryAction: .noop("No recents"), basePriority: 900)]
+        }
+        return context.recentItems.map { item in
+            let title = item.title?.isEmpty == false ? item.title! : item.url.absoluteString
+            return CommandPanelSuggestion(id: "recent-\(item.url.absoluteString)", title: title, subtitle: [item.url.absoluteString, "Recent", item.openCount > 1 ? "\(item.openCount)x" : nil].compactMap { $0 }.joined(separator: " • "), kind: .historyOrRecent, scope: .recents, representedURL: item.url, primaryAction: .openURL(item.url), alternateActions: [CommandPanelAlternateAction(id: "copy-url", title: "Copy URL", subtitle: item.url.absoluteString, iconSystemName: "doc.on.doc", action: .copyURL(item.url)), CommandPanelAlternateAction(id: "remove-recent", title: "Remove from suggestions", subtitle: "Remove this recent item", iconSystemName: "xmark.circle", action: .removeRecent(item.url))], basePriority: CommandPaletteRanking.rank(for: .historyOrRecent), lastUsedAt: item.lastAccessedAt)
         }
     }
 }
 
-struct SearchShortcutCommandProvider: CommandPaletteProviding {
+struct SearchHistoryCommandProvider: CommandPanelSuggestionProviding {
+    let providerName = "Search History"
+    private let store = CommandPanelSearchHistoryStore.shared
+
+    func suggestions(for query: String, state: CommandPanelState, context: CommandPanelContext) -> [CommandPanelSuggestion] {
+        guard state.activeScope == nil || state.activeScope == .all else { return [] }
+        return store.matches(for: query).map { past in
+            CommandPanelSuggestion(id: "search-history-\(past)", title: past, subtitle: "Previous search", kind: .searchHistory, scope: .all, representedURL: nil, primaryAction: .search(past), basePriority: CommandPaletteRanking.rank(for: .searchHistory))
+        }
+    }
+}
+
+struct WebSuggestionCommandProvider: CommandPanelSuggestionProviding {
+    let providerName = "Web Suggestions"
+
+    func suggestions(for query: String, state: CommandPanelState, context: CommandPanelContext) -> [CommandPanelSuggestion] {
+        guard state.activeScope == nil || state.activeScope == .all else { return [] }
+        return context.webSuggestions.map { suggestion in
+            CommandPanelSuggestion(id: "web-suggestion-\(suggestion)", title: suggestion, subtitle: "Search suggestion", kind: .webSuggestion, scope: .all, representedURL: nil, primaryAction: .search(suggestion), basePriority: CommandPaletteRanking.rank(for: .webSuggestion))
+        }
+    }
+}
+
+struct SearchShortcutCommandProvider: CommandPanelSuggestionProviding {
     let providerName = "Search Shortcuts"
+    private let shortcuts: [(keyword: String, aliases: [String], name: String, template: String)] = [("g", ["google"], "Google", "https://www.google.com/search?q=%@"), ("ddg", ["duckduckgo"], "DuckDuckGo", "https://duckduckgo.com/?q=%@"), ("gh", ["github"], "GitHub", "https://github.com/search?q=%@"), ("yt", ["youtube"], "YouTube", "https://www.youtube.com/results?search_query=%@")]
 
-    private let shortcuts: [(keyword: String, name: String, template: String)] = [
-        ("g", "Google", "https://www.google.com/search?q=%@"),
-        ("ddg", "DuckDuckGo", "https://duckduckgo.com/?q=%@"),
-        ("gh", "GitHub", "https://github.com/search?q=%@")
-    ]
-
-    func items(for query: String, context: CommandPaletteContext) -> [CommandPaletteItem] {
-        let parts = query.split(separator: " ", maxSplits: 1).map(String.init)
-        guard let keyword = parts.first?.trimmingCharacters(in: CharacterSet(charactersIn: ":")),
-              let shortcut = shortcuts.first(where: { $0.keyword == keyword || query.hasPrefix($0.keyword + ":") }) else {
-            return shortcuts
-                .filter { query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) || $0.keyword.localizedCaseInsensitiveContains(query) }
-                .map { shortcut in
-                    CommandPaletteItem(
-                        id: "site-shortcut-\(shortcut.keyword)",
-                        title: "\(shortcut.keyword): Search \(shortcut.name)",
-                        subtitle: "Type \(shortcut.keyword): your query",
-                        kind: .siteShortcut,
-                        rank: CommandPaletteRanking.rank(for: .siteShortcut),
-                        representedURL: nil,
-                        action: .noop("Enter a query for \(shortcut.name)")
-                    )
-                }
+    func suggestions(for query: String, state: CommandPanelState, context: CommandPanelContext) -> [CommandPanelSuggestion] {
+        guard state.activeScope == nil || state.activeScope == .all else { return [] }
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let parts = trimmed.split(separator: " ", maxSplits: 1).map(String.init)
+        let candidate = parts.first?.trimmingCharacters(in: CharacterSet(charactersIn: ":")).lowercased() ?? ""
+        let matched = shortcuts.first { $0.keyword == candidate || $0.aliases.contains(candidate) || trimmed.hasPrefix($0.keyword + ":") }
+        if let shortcut = matched {
+            let searchText = trimmed.hasPrefix(shortcut.keyword + ":") ? String(trimmed.dropFirst(shortcut.keyword.count + 1)).trimmingCharacters(in: .whitespacesAndNewlines) : (parts.dropFirst().first ?? "")
+            guard !searchText.isEmpty, let url = SearchEngineService.searchURL(for: searchText, template: shortcut.template) else { return [] }
+            return [CommandPanelSuggestion(id: "site-shortcut-run-\(shortcut.keyword)-\(searchText)", title: "Search \(shortcut.name) for “\(searchText)”", subtitle: url.absoluteString, kind: .siteShortcut, scope: .all, representedURL: url, primaryAction: .openURL(url), alternateActions: CommandPanelSuggestion.urlActions(url), basePriority: CommandPaletteRanking.rank(for: .siteShortcut))]
         }
-
-        let searchText: String
-        if query.hasPrefix(shortcut.keyword + ":") {
-            searchText = String(query.dropFirst(shortcut.keyword.count + 1)).trimmingCharacters(in: .whitespacesAndNewlines)
-        } else {
-            searchText = parts.dropFirst().first ?? ""
+        return shortcuts.map { shortcut in
+            CommandPanelSuggestion(id: "site-shortcut-\(shortcut.keyword)", title: "\(shortcut.keyword): Search \(shortcut.name)", subtitle: "Type \(shortcut.keyword) + space to search \(shortcut.name)", kind: .siteShortcut, scope: .all, representedURL: nil, primaryAction: .noop("Enter a query for \(shortcut.name)"), basePriority: CommandPaletteRanking.rank(for: .siteShortcut))
         }
-        guard !searchText.isEmpty,
-              let url = SearchEngineService.searchURL(for: searchText, template: shortcut.template) else { return [] }
-
-        return [CommandPaletteItem(
-            id: "site-shortcut-run-\(shortcut.keyword)-\(searchText)",
-            title: "Search \(shortcut.name) for “\(searchText)”",
-            subtitle: url.absoluteString,
-            kind: .siteShortcut,
-            rank: CommandPaletteRanking.rank(for: .siteShortcut),
-            representedURL: url,
-            action: .openURL(url)
-        )]
     }
 }
 
-struct ProfileCommandProvider: CommandPaletteProviding {
+struct SafariBookmarkProvider: CommandPanelSuggestionProviding {
+    let providerName = "Safari Bookmarks"
+
+    func suggestions(for query: String, state: CommandPanelState, context: CommandPanelContext) -> [CommandPanelSuggestion] {
+        guard state.activeScope == nil || state.activeScope == .all || state.activeScope == .bookmarks else { return [] }
+        let wantsBookmarks = state.activeScope == .bookmarks || query.localizedCaseInsensitiveContains("bookmark") || query.localizedCaseInsensitiveContains("favorite") || query.localizedCaseInsensitiveContains("saved")
+        if context.bookmarks.isEmpty, let error = context.bookmarkError, wantsBookmarks {
+            return [CommandPanelSuggestion(id: "bookmarks-unavailable", title: "Safari bookmarks unavailable", subtitle: error, kind: .permission, scope: .bookmarks, representedURL: nil, primaryAction: .openSettings(.permissions), basePriority: CommandPaletteRanking.rank(for: .permission))]
+        }
+        return context.bookmarks.map { bookmark in
+            let stale = SafariBookmarkStore.shared.isUsingStaleCache ? "Cached" : nil
+            return CommandPanelSuggestion(id: bookmark.id, title: bookmark.title, subtitle: [bookmark.url.absoluteString, bookmark.path, stale].compactMap { $0 }.joined(separator: " • "), kind: .bookmark, scope: .bookmarks, representedURL: bookmark.url, primaryAction: .openURL(bookmark.url), alternateActions: CommandPanelSuggestion.urlActions(bookmark.url), basePriority: CommandPaletteRanking.rank(for: .bookmark))
+        }
+    }
+}
+
+struct ProfileCommandProvider: CommandPanelSuggestionProviding {
     let providerName = "Profiles"
 
-    func items(for query: String, context: CommandPaletteContext) -> [CommandPaletteItem] {
-        guard query.localizedCaseInsensitiveContains("profile") || query.hasPrefix("p") else { return [] }
-        return (1...9).map { number in
-            CommandPaletteItem(
-                id: "profile-\(number)",
-                title: "Open Safari Profile \(number)",
-                subtitle: "Profile mappings are configured in step 10",
-                kind: .profile,
-                rank: CommandPaletteRanking.rank(for: .profile),
-                representedURL: nil,
-                action: .openProfile(number)
-            )
+    func suggestions(for query: String, state: CommandPanelState, context: CommandPanelContext) -> [CommandPanelSuggestion] {
+        guard state.activeScope == nil || state.activeScope == .all else { return [] }
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let profiles = ProfileStore.shared.profiles
+        if profiles.isEmpty, trimmed.contains("profile") || trimmed.hasPrefix("p") {
+            return [CommandPanelSuggestion(id: "profiles-empty", title: "No Safari profiles configured", subtitle: "Refresh profiles in Settings to discover Safari profiles", kind: .permission, scope: .all, representedURL: nil, primaryAction: .openSettings(.profiles), basePriority: CommandPaletteRanking.rank(for: .permission))]
+        }
+        return profiles.compactMap { profile in
+            let aliases = ["profile", profile.displayName.lowercased(), "p\(profile.assignedNumber)", "profile \(profile.assignedNumber)"]
+            guard trimmed.isEmpty || aliases.contains(where: { $0.localizedCaseInsensitiveContains(trimmed) || trimmed.localizedCaseInsensitiveContains($0) }) || CommandPanelSuggestionRanker.fuzzyScore(query: trimmed, candidate: profile.displayName) > 0 else { return nil }
+            return CommandPanelSuggestion(id: "profile-\(profile.assignedNumber)", title: profile.displayName, subtitle: "Safari Profile • Ctrl+\(profile.assignedNumber) • File > New \(profile.effectiveMenuName) Window", kind: .profile, scope: .all, representedURL: nil, primaryAction: .openProfile(profile.assignedNumber), alternateActions: [CommandPanelAlternateAction(id: "copy-profile", title: "Copy Profile Name", subtitle: profile.displayName, iconSystemName: "doc.on.doc", action: .copyText(profile.displayName)), CommandPanelAlternateAction(id: "profile-settings", title: "Open Profiles Settings", subtitle: "Manage profile mappings", iconSystemName: "gearshape", action: .openSettings(.profiles))], basePriority: CommandPaletteRanking.rank(for: .profile))
         }
     }
 }
 
-struct TrafficRuleCommandProvider: CommandPaletteProviding {
+struct TrafficRuleCommandProvider: CommandPanelSuggestionProviding {
     let providerName = "Traffic Control"
 
-    func items(for query: String, context: CommandPaletteContext) -> [CommandPaletteItem] {
-        guard query.localizedCaseInsensitiveContains("traffic") || query.localizedCaseInsensitiveContains("rule") else { return [] }
-        return [CommandPaletteItem(
-            id: "traffic-control-placeholder",
-            title: "Traffic Control Rules",
-            subtitle: "Rule listing and matching are implemented in step 13",
-            kind: .trafficRule,
-            rank: CommandPaletteRanking.rank(for: .trafficRule),
-            representedURL: nil,
-            action: .openSettings(.trafficControl)
-        )]
+    func suggestions(for query: String, state: CommandPanelState, context: CommandPanelContext) -> [CommandPanelSuggestion] {
+        guard state.activeScope == nil || state.activeScope == .all else { return [] }
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let rules = TrafficRuleStore.shared.rules
+        var results: [CommandPanelSuggestion] = []
+        if case .url(let url) = URLParser().parse(trimmed), let match = TrafficRuleMatcher().firstMatch(for: url, rules: rules) {
+            let rule = match.rule
+            results.append(ruleSuggestion(rule, titlePrefix: "Matching rule: ", representedURL: url, basePriority: 1))
+        }
+        if rules.isEmpty, trimmed.localizedCaseInsensitiveContains("traffic") || trimmed.localizedCaseInsensitiveContains("rule") || trimmed.localizedCaseInsensitiveContains("route") {
+            return [CommandPanelSuggestion(id: "traffic-empty", title: "No Traffic Control rules", subtitle: "Open Traffic Control settings to add routing rules", kind: .permission, scope: .all, representedURL: nil, primaryAction: .openSettings(.trafficControl), basePriority: CommandPaletteRanking.rank(for: .permission))]
+        }
+        results.append(contentsOf: rules.compactMap { rule in
+            let text = [rule.name, rule.pattern, "profile \(rule.targetProfileNumber)", rule.matcherType.rawValue, "traffic", "rule", "route"].joined(separator: " ")
+            guard trimmed.isEmpty || text.localizedCaseInsensitiveContains(trimmed) || CommandPanelSuggestionRanker.fuzzyScore(query: trimmed, candidate: text) > 0 else { return nil }
+            return ruleSuggestion(rule)
+        })
+        return results
+    }
+
+    private func ruleSuggestion(_ rule: TrafficRule, titlePrefix: String = "", representedURL: URL? = nil, basePriority: Int? = nil) -> CommandPanelSuggestion {
+        let enabled = rule.enabled ? "Enabled" : "Disabled"
+        let subtitle = "\(enabled) • \(rule.matcherType.rawValue): \(rule.pattern) • Profile \(rule.targetProfileNumber) • \(rule.openBehavior.rawValue)"
+        return CommandPanelSuggestion(id: "traffic-rule-\(rule.id.uuidString)-\(titlePrefix.isEmpty ? "row" : "match")", title: "\(titlePrefix)\(rule.name)", subtitle: subtitle, kind: .trafficRule, scope: .all, representedURL: representedURL, primaryAction: .openSettings(.trafficControl), alternateActions: [CommandPanelAlternateAction(id: "copy-pattern", title: "Copy Rule Pattern", subtitle: rule.pattern, iconSystemName: "doc.on.doc", action: .copyText(rule.pattern)), CommandPanelAlternateAction(id: "traffic-settings", title: "Open Traffic Control Settings", subtitle: "Edit routing rules", iconSystemName: "gearshape", action: .openSettings(.trafficControl))], basePriority: basePriority ?? CommandPaletteRanking.rank(for: .trafficRule))
     }
 }
 
-struct SettingsCommandProvider: CommandPaletteProviding {
+struct SettingsCommandProvider: CommandPanelSuggestionProviding {
     let providerName = "Settings"
 
-    func items(for query: String, context: CommandPaletteContext) -> [CommandPaletteItem] {
-        guard query.isEmpty
-                || "settings".localizedCaseInsensitiveContains(query)
-                || query.localizedCaseInsensitiveContains("settings")
-                || query.localizedCaseInsensitiveContains("preferences") else { return [] }
+    func suggestions(for query: String, state: CommandPanelState, context: CommandPanelContext) -> [CommandPanelSuggestion] {
+        guard state.activeScope == nil || state.activeScope == .all || state.activeScope == .settings else { return [] }
+        let rows: [CommandPanelSuggestion] = [
+            settingsRow("settings-general", "Open Settings", "Return to run this command", .openSettings(.general), "gearshape"),
+            settingsRow("settings-shortcuts", "Open Shortcuts Settings", "Return to run this command", .openSettings(.shortcuts), "keyboard"),
+            settingsRow("settings-profiles", "Open Profiles Settings", "Return to run this command", .openSettings(.profiles), "person.crop.circle"),
+            settingsRow("settings-traffic", "Open Traffic Control Settings", "Return to run this command", .openSettings(.trafficControl), "arrow.triangle.branch"),
+            settingsRow("settings-web-suggestions", "Toggle Web Suggestions", AppSettings.shared.webSearchSuggestionsEnabled ? "On • Return to toggle this setting" : "Off • Return to toggle this setting", .toggleWebSuggestions, "sparkles"),
+            settingsRow("settings-duplicate-tabs", "Toggle Existing Tab Switching", AppSettings.shared.switchToExistingSafariTabInsteadOfOpeningDuplicate ? "On • Return to toggle this setting" : "Off • Return to toggle this setting", .toggleDuplicateTabSwitching, "rectangle.on.rectangle"),
+            settingsRow("settings-clear-recents", "Clear Recents", "Return to run this command", .clearRecents, "trash"),
+            settingsRow("settings-clear-history", "Clear Search History", "Return to run this command", .clearSearchHistory, "clock.arrow.circlepath"),
+            settingsRow("settings-refresh-bookmarks", "Refresh Safari Bookmarks", "Return to run this command", .refreshSafariBookmarks, "book")
+        ]
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return rows }
+        return rows.filter { $0.title.localizedCaseInsensitiveContains(trimmed) || $0.subtitle.localizedCaseInsensitiveContains(trimmed) || CommandPanelSuggestionRanker.fuzzyScore(query: trimmed, candidate: $0.title) > 0 }
+    }
 
-        return [CommandPaletteItem(
-            id: "settings",
-            title: "Settings",
-            subtitle: "Open Arklike settings",
-            kind: .settings,
-            rank: CommandPaletteRanking.rank(for: .settings),
-            representedURL: nil,
-            action: .openSettings(.general)
-        )]
+    private func settingsRow(_ id: String, _ title: String, _ subtitle: String, _ action: CommandPaletteAction, _ icon: String) -> CommandPanelSuggestion {
+        CommandPanelSuggestion(id: id, title: title, subtitle: subtitle, kind: .settings, scope: .settings, iconSystemName: icon, representedURL: nil, primaryAction: action, basePriority: CommandPaletteRanking.rank(for: .settings))
     }
 }

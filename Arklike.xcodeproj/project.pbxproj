@@ -40,6 +40,12 @@
 		A0000000000000000000C4 /* SettingsWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000C3 /* SettingsWindowController.swift */; };
 		A0000000000000000000D2 /* MenuBarIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000D1 /* MenuBarIcon.swift */; };
 		A0000000000000000000E2 /* ToastHUD.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000E1 /* ToastHUD.swift */; };
+		A000000000000000000111 /* CommandPanelState.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000000000101 /* CommandPanelState.swift */; };
+		A000000000000000000112 /* CommandPanelStores.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000000000102 /* CommandPanelStores.swift */; };
+		A000000000000000000113 /* CommandPanelSuggestionRanker.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000000000103 /* CommandPanelSuggestionRanker.swift */; };
+		A000000000000000000114 /* CommandPanelWebSuggestionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000000000104 /* CommandPanelWebSuggestionService.swift */; };
+		A000000000000000000115 /* CommandPanelSuggestionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000000000105 /* CommandPanelSuggestionManager.swift */; };
+		A000000000000000000116 /* SafariLiveTabStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000000000106 /* SafariLiveTabStore.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -80,6 +86,12 @@
 		A0000000000000000000C3 /* SettingsWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsWindowController.swift; sourceTree = "<group>"; };
 		A0000000000000000000D1 /* MenuBarIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarIcon.swift; sourceTree = "<group>"; };
 		A0000000000000000000E1 /* ToastHUD.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToastHUD.swift; sourceTree = "<group>"; };
+		A000000000000000000101 /* CommandPanelState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandPanelState.swift; sourceTree = "<group>"; };
+		A000000000000000000102 /* CommandPanelStores.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandPanelStores.swift; sourceTree = "<group>"; };
+		A000000000000000000103 /* CommandPanelSuggestionRanker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandPanelSuggestionRanker.swift; sourceTree = "<group>"; };
+		A000000000000000000104 /* CommandPanelWebSuggestionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandPanelWebSuggestionService.swift; sourceTree = "<group>"; };
+		A000000000000000000105 /* CommandPanelSuggestionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandPanelSuggestionManager.swift; sourceTree = "<group>"; };
+		A000000000000000000106 /* SafariLiveTabStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SafariLiveTabStore.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -127,6 +139,12 @@
 				A0000000000000000000000E /* CommandPaletteProviders.swift */,
 				A0000000000000000000000F /* CommandPaletteController.swift */,
 				A00000000000000000000010 /* CommandPaletteView.swift */,
+				A000000000000000000101 /* CommandPanelState.swift */,
+				A000000000000000000102 /* CommandPanelStores.swift */,
+				A000000000000000000103 /* CommandPanelSuggestionRanker.swift */,
+				A000000000000000000104 /* CommandPanelWebSuggestionService.swift */,
+				A000000000000000000105 /* CommandPanelSuggestionManager.swift */,
+				A000000000000000000106 /* SafariLiveTabStore.swift */,
 				B0000000000000000000001 /* SafariAutomation.swift */,
 				A000000000000000000022 /* SearchEngineService.swift */,
 				A000000000000000000020 /* SafariSidebarController.swift */,
@@ -256,6 +274,12 @@
 				A0000000000000000000001B /* CommandPaletteProviders.swift in Sources */,
 				A0000000000000000000001C /* CommandPaletteController.swift in Sources */,
 				A0000000000000000000001D /* CommandPaletteView.swift in Sources */,
+				A000000000000000000111 /* CommandPanelState.swift in Sources */,
+				A000000000000000000112 /* CommandPanelStores.swift in Sources */,
+				A000000000000000000113 /* CommandPanelSuggestionRanker.swift in Sources */,
+				A000000000000000000114 /* CommandPanelWebSuggestionService.swift in Sources */,
+				A000000000000000000115 /* CommandPanelSuggestionManager.swift in Sources */,
+				A000000000000000000116 /* SafariLiveTabStore.swift in Sources */,
 				A0000000000000000000001E /* SafariAutomation.swift in Sources */,
 				A000000000000000000023 /* SearchEngineService.swift in Sources */,
 				A00000000000000000002A /* SafariSidebarController.swift in Sources */,
