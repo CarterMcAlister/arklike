@@ -1,7 +1,7 @@
 import Combine
 import Foundation
 
-struct Profile: Identifiable, Codable, Equatable {
+struct Profile: Identifiable, Codable, Equatable, Sendable {
     var id: UUID = UUID()
     var displayName: String
     var assignedNumber: Int

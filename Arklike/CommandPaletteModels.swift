@@ -2,7 +2,7 @@ import Foundation
 
 // MARK: - Scopes / modes
 
-enum CommandPanelSearchScope: String, CaseIterable, Equatable, Codable, Identifiable {
+enum CommandPanelSearchScope: String, CaseIterable, Equatable, Codable, Identifiable, Sendable {
     case all
     case recents
     case liveTabs
@@ -52,7 +52,7 @@ enum CommandPanelSearchScope: String, CaseIterable, Equatable, Codable, Identifi
     }
 }
 
-enum CommandPanelMode: Equatable {
+enum CommandPanelMode: Equatable, Sendable {
     case search
     case scopePicker
     case actions
@@ -60,7 +60,7 @@ enum CommandPanelMode: Equatable {
 
 // MARK: - Suggestions
 
-enum CommandPanelSuggestionKind: String, Equatable, Codable {
+enum CommandPanelSuggestionKind: String, Equatable, Codable, Sendable {
     case exactCommand
     case siteShortcut
     case url
@@ -81,7 +81,7 @@ enum CommandPanelSuggestionKind: String, Equatable, Codable {
 
 typealias CommandPaletteItemKind = CommandPanelSuggestionKind
 
-struct CommandPanelAlternateAction: Identifiable, Equatable {
+struct CommandPanelAlternateAction: Identifiable, Equatable, Sendable {
     let id: String
     let title: String
     let subtitle: String
@@ -89,7 +89,7 @@ struct CommandPanelAlternateAction: Identifiable, Equatable {
     let action: CommandPaletteAction
 }
 
-struct CommandPanelSuggestion: Identifiable, Equatable {
+struct CommandPanelSuggestion: Identifiable, Equatable, Sendable {
     let id: String
     let title: String
     let subtitle: String
@@ -185,7 +185,7 @@ extension CommandPanelSuggestionKind {
     }
 }
 
-enum CommandPaletteAction: Equatable {
+enum CommandPaletteAction: Equatable, Sendable {
     case openURL(URL)
     case search(String)
     case switchToSafariTab(windowId: Int?, tabIndex: Int?)
@@ -206,7 +206,7 @@ enum CommandPaletteAction: Equatable {
     case noop(String)
 }
 
-enum SettingsDestination: String, Equatable, Codable, CaseIterable {
+enum SettingsDestination: String, Equatable, Codable, CaseIterable, Sendable {
     case general
     case shortcuts
     case profiles
@@ -228,10 +228,9 @@ enum SettingsDestination: String, Equatable, Codable, CaseIterable {
     }
 }
 
-@MainActor
-protocol CommandPanelSuggestionProviding {
+protocol CommandPanelSuggestionProviding: Sendable {
     var providerName: String { get }
-    func suggestions(for query: String, state: CommandPanelState, context: CommandPanelContext) -> [CommandPanelSuggestion]
+    func suggestions(for query: String, input: CommandPanelSuggestionInput) -> [CommandPanelSuggestion]
 }
 
 typealias CommandPaletteProviding = CommandPanelSuggestionProviding

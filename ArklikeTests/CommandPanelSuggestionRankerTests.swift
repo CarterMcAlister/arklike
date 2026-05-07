@@ -1,7 +1,6 @@
 import XCTest
 @testable import Arklike
 
-@MainActor
 final class CommandPanelSuggestionRankerTests: XCTestCase {
     private let ranker = CommandPanelSuggestionRanker()
 
@@ -15,7 +14,7 @@ final class CommandPanelSuggestionRankerTests: XCTestCase {
             suggestion(id: "ranker-test-tab-url", title: "Example", subtitle: "https://example.com • Window 1", kind: .safariTab, representedURL: url, action: .switchToSafariTab(windowId: 1, tabIndex: 0), basePriority: 20)
         ]
 
-        let ranked = ranker.rank(suggestions, query: "example.com", activeScope: nil, usageStore: .shared)
+        let ranked = ranker.rank(suggestions, query: "example.com", activeScope: nil, usageRecords: [:])
 
         XCTAssertEqual(ranked.first?.kind, .safariTab)
         XCTAssertLessThan(index(of: .bookmark, in: ranked), index(of: .url, in: ranked))
@@ -30,7 +29,7 @@ final class CommandPanelSuggestionRankerTests: XCTestCase {
             suggestion(id: "ranker-test-bookmark-docs", title: "Docs", subtitle: "https://developer.example.com/docs", kind: .bookmark, representedURL: url, action: .openURL(url), basePriority: 30)
         ]
 
-        let ranked = ranker.rank(suggestions, query: "docs", activeScope: nil, usageStore: .shared)
+        let ranked = ranker.rank(suggestions, query: "docs", activeScope: nil, usageRecords: [:])
 
         XCTAssertEqual(ranked.first?.kind, .bookmark)
     }
@@ -42,7 +41,7 @@ final class CommandPanelSuggestionRankerTests: XCTestCase {
             suggestion(id: "ranker-test-open-settings", title: "Open Settings", subtitle: "Return to run this command", kind: .settings, representedURL: nil, action: .openSettings(.general), basePriority: 90)
         ]
 
-        let ranked = ranker.rank(suggestions, query: "settings", activeScope: nil, usageStore: .shared)
+        let ranked = ranker.rank(suggestions, query: "settings", activeScope: nil, usageRecords: [:])
 
         XCTAssertEqual(ranked.first?.kind, .settings)
     }
@@ -56,7 +55,7 @@ final class CommandPanelSuggestionRankerTests: XCTestCase {
             suggestion(id: "ranker-test-paste-empty", title: "Paste and Go", subtitle: url.absoluteString, kind: .pasteAndGo, representedURL: url, action: .openURL(url), basePriority: -100)
         ]
 
-        let ranked = ranker.rank(suggestions, query: "", activeScope: nil, usageStore: .shared)
+        let ranked = ranker.rank(suggestions, query: "", activeScope: nil, usageRecords: [:])
 
         XCTAssertEqual(ranked.first?.kind, .pasteAndGo)
         XCTAssertEqual(ranked.last?.id, "ranker-test-placeholder")

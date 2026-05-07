@@ -3,7 +3,7 @@ import ApplicationServices
 import Combine
 import Foundation
 
-struct SafariWindowContext: Equatable {
+struct SafariWindowContext: Equatable, Sendable {
     let processIdentifier: pid_t
     let safariWindowId: Int?
     let accessibilityWindowNumber: Int?
@@ -13,14 +13,14 @@ struct SafariWindowContext: Equatable {
     let source: Source
     let observedAt: Date
 
-    enum Source: String {
+    enum Source: String, Sendable {
         case accessibilityFocusedWindow
         case appleScriptWindowEnumeration
         case unavailable
     }
 }
 
-struct FrontmostSafariSnapshot: Equatable {
+struct FrontmostSafariSnapshot: Equatable, Sendable {
     let isSafariFrontmost: Bool
     let frontmostBundleIdentifier: String?
     let safariProcessIdentifier: pid_t?
@@ -83,6 +83,7 @@ final class FrontmostSafariMonitor: ObservableObject {
     private var settingsCancellable: AnyCancellable?
     private var axObserver: AXObserver?
     private var observedSafariPID: pid_t?
+    private var windowIDResolutionTask: Task<Void, Never>?
     private var isStarted = false
 
     private init(workspace: NSWorkspace = .shared) {
@@ -115,43 +116,42 @@ final class FrontmostSafariMonitor: ObservableObject {
     }
 
     func refresh(reason: String = "manual") {
-        let frontmostApp = workspace.frontmostApplication
-        let frontmostBundleIdentifier = frontmostApp?.bundleIdentifier
-        let isSafariFrontmost = frontmostBundleIdentifier == Self.safariBundleIdentifier
-        let safariPID = isSafariFrontmost ? frontmostApp?.processIdentifier : nil
+        PerformanceTimer.measure("frontmost safari monitor refresh") {
+            let frontmostApp = workspace.frontmostApplication
+            let frontmostBundleIdentifier = frontmostApp?.bundleIdentifier
+            let isSafariFrontmost = frontmostBundleIdentifier == Self.safariBundleIdentifier
+            let safariPID = isSafariFrontmost ? frontmostApp?.processIdentifier : nil
 
-        if let safariPID {
-            configureAXObserverIfNeeded(for: safariPID)
-            let activeWindow = activeSafariWindowContext(pid: safariPID)
-            publish(
-                isSafariFrontmost: true,
-                frontmostBundleIdentifier: frontmostBundleIdentifier,
-                safariProcessIdentifier: safariPID,
-                activeWindow: activeWindow
-            )
-        } else {
-            stopAXObserver()
-            publish(
-                isSafariFrontmost: false,
-                frontmostBundleIdentifier: frontmostBundleIdentifier,
-                safariProcessIdentifier: nil,
-                activeWindow: nil
-            )
+            if let safariPID {
+                configureAXObserverIfNeeded(for: safariPID)
+                let activeWindow = activeSafariWindowContext(pid: safariPID)
+                publish(
+                    isSafariFrontmost: true,
+                    frontmostBundleIdentifier: frontmostBundleIdentifier,
+                    safariProcessIdentifier: safariPID,
+                    activeWindow: activeWindow
+                )
+                if let activeWindow {
+                    scheduleWindowIDResolution(pid: safariPID, title: activeWindow.title)
+                }
+            } else {
+                stopAXObserver()
+                publish(
+                    isSafariFrontmost: false,
+                    frontmostBundleIdentifier: frontmostBundleIdentifier,
+                    safariProcessIdentifier: nil,
+                    activeWindow: nil
+                )
+            }
         }
     }
 
     func activeWindowForSafariAction() -> SafariWindowContext? {
-        if snapshot.isSafariFrontmost {
-            refresh(reason: "action requested")
-        }
-        return snapshot.activeWindow
+        snapshot.activeWindow
     }
 
     func lastActiveWindowForSafariAction() -> SafariWindowContext? {
-        if snapshot.isSafariFrontmost {
-            refresh(reason: "last active action requested")
-        }
-        return lastActiveSafariWindow(from: snapshot.activeWindow) ?? snapshot.lastActiveSafariWindow
+        lastActiveSafariWindow(from: snapshot.activeWindow) ?? snapshot.lastActiveSafariWindow
     }
 
     private func publish(
@@ -232,6 +232,8 @@ final class FrontmostSafariMonitor: ObservableObject {
                 .commonModes
             )
         }
+        windowIDResolutionTask?.cancel()
+        windowIDResolutionTask = nil
         axObserver = nil
         observedSafariPID = nil
     }
@@ -241,14 +243,23 @@ final class FrontmostSafariMonitor: ObservableObject {
     }
 
     private func activeSafariWindowContext(pid: pid_t) -> SafariWindowContext? {
-        if let axContext = accessibilityFocusedWindowContext(pid: pid) {
-            if axContext.safariWindowId != nil || axContext.title != nil {
-                return axContext
+        if var axContext = accessibilityFocusedWindowContext(pid: pid) {
+            if let previousWindow = snapshot.activeWindow,
+               previousWindow.processIdentifier == pid,
+               previousWindow.title == axContext.title,
+               axContext.safariWindowId == nil {
+                axContext = SafariWindowContext(
+                    processIdentifier: axContext.processIdentifier,
+                    safariWindowId: previousWindow.safariWindowId,
+                    accessibilityWindowNumber: axContext.accessibilityWindowNumber,
+                    title: axContext.title,
+                    profileHint: axContext.profileHint,
+                    center: axContext.center,
+                    source: axContext.source,
+                    observedAt: axContext.observedAt
+                )
             }
-        }
-
-        if let scriptContext = appleScriptEnumeratedFrontWindowContext(pid: pid) {
-            return scriptContext
+            return axContext
         }
 
         return SafariWindowContext(
@@ -277,12 +288,11 @@ final class FrontmostSafariMonitor: ObservableObject {
         let windowElement = focusedWindowValue as! AXUIElement
         let title = stringAttribute(kAXTitleAttribute, from: windowElement)
         let axWindowNumber = intAttribute("AXWindowNumber", from: windowElement)
-        let safariWindowId = appleScriptWindowIdMatching(title: title, axWindowNumber: axWindowNumber)
         let center = accessibilityWindowCenterInAppKitCoordinates(from: windowElement)
 
         return SafariWindowContext(
             processIdentifier: pid,
-            safariWindowId: safariWindowId,
+            safariWindowId: nil,
             accessibilityWindowNumber: axWindowNumber,
             title: title,
             profileHint: Self.profileHint(from: title),
@@ -292,80 +302,38 @@ final class FrontmostSafariMonitor: ObservableObject {
         )
     }
 
-    private func appleScriptEnumeratedFrontWindowContext(pid: pid_t) -> SafariWindowContext? {
-        guard let firstWindow = appleScriptEnumeratedWindows().first else { return nil }
+    private func scheduleWindowIDResolution(pid: pid_t, title: String?) {
+        windowIDResolutionTask?.cancel()
+        windowIDResolutionTask = Task { [weak self] in
+            let resolvedID = await Task.detached(priority: .utility) {
+                SafariWindowIDResolver.resolve(title: title)
+            }.value
 
-        return SafariWindowContext(
-            processIdentifier: pid,
-            safariWindowId: firstWindow.id,
-            accessibilityWindowNumber: nil,
-            title: firstWindow.title,
-            profileHint: Self.profileHint(from: firstWindow.title),
-            center: nil,
-            source: .appleScriptWindowEnumeration,
-            observedAt: Date()
-        )
-    }
+            await MainActor.run {
+                guard let self else { return }
+                guard self.snapshot.safariProcessIdentifier == pid else { return }
+                guard let activeWindow = self.snapshot.activeWindow else { return }
+                guard activeWindow.safariWindowId != resolvedID else { return }
 
-    private struct AppleScriptWindowSummary {
-        let id: Int
-        let title: String?
-    }
+                let updatedWindow = SafariWindowContext(
+                    processIdentifier: activeWindow.processIdentifier,
+                    safariWindowId: resolvedID,
+                    accessibilityWindowNumber: activeWindow.accessibilityWindowNumber,
+                    title: activeWindow.title,
+                    profileHint: activeWindow.profileHint,
+                    center: activeWindow.center,
+                    source: activeWindow.source,
+                    observedAt: activeWindow.observedAt
+                )
 
-    private func appleScriptEnumeratedWindows() -> [AppleScriptWindowSummary] {
-        let script = """
-        tell application "Safari"
-            if (count of windows) is 0 then return ""
-            set outputLines to {}
-            repeat with safariWindow in windows
-                set windowIdText to (id of safariWindow) as text
-                set windowName to ""
-                try
-                    set windowName to name of safariWindow
-                end try
-                set end of outputLines to windowIdText & tab & windowName
-            end repeat
-            set AppleScript's text item delimiters to linefeed
-            set outputText to outputLines as text
-            set AppleScript's text item delimiters to ""
-            return outputText
-        end tell
-        """
-
-        guard let output = runAppleScript(script), !output.isEmpty else { return [] }
-        return output
-            .components(separatedBy: .newlines)
-            .compactMap { line in
-                let parts = line.components(separatedBy: "\t")
-                guard let idText = parts.first?.trimmingCharacters(in: .whitespacesAndNewlines),
-                      let id = Int(idText) else { return nil }
-                let title = parts.dropFirst().joined(separator: "\t").nilIfEmpty
-                return AppleScriptWindowSummary(id: id, title: title)
+                self.publish(
+                    isSafariFrontmost: true,
+                    frontmostBundleIdentifier: self.snapshot.frontmostBundleIdentifier,
+                    safariProcessIdentifier: pid,
+                    activeWindow: updatedWindow
+                )
             }
-    }
-
-    private func appleScriptWindowIdMatching(title: String?, axWindowNumber: Int?) -> Int? {
-        let windows = appleScriptEnumeratedWindows()
-        guard !windows.isEmpty else { return nil }
-
-        // Safari AppleScript does not expose AXWindowNumber. Keep the value in the
-        // signature so later OS-specific mapping can be added without changing
-        // callers, but prefer exact title matching over blindly using front window.
-        _ = axWindowNumber
-        if let title, !title.isEmpty,
-           let matched = windows.first(where: { $0.title == title }) {
-            return matched.id
         }
-
-        return windows.first?.id
-    }
-
-    private func runAppleScript(_ source: String) -> String? {
-        var error: NSDictionary?
-        guard let script = NSAppleScript(source: source) else { return nil }
-        let descriptor = script.executeAndReturnError(&error)
-        if error != nil { return nil }
-        return descriptor.stringValue
     }
 
     private func stringAttribute(_ attribute: String, from element: AXUIElement) -> String? {

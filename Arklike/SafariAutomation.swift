@@ -1,7 +1,7 @@
 import AppKit
 import Foundation
 
-struct SafariTabSnapshot: Identifiable, Equatable {
+struct SafariTabSnapshot: Identifiable, Equatable, Sendable {
     var id: String { "\(windowId)-\(tabIndex)" }
     let windowId: Int
     let windowTitle: String?
@@ -11,14 +11,14 @@ struct SafariTabSnapshot: Identifiable, Equatable {
     let isActive: Bool
 }
 
-struct SafariWindowSnapshot: Identifiable, Equatable {
+struct SafariWindowSnapshot: Identifiable, Equatable, Sendable {
     var id: Int { windowId }
     let windowId: Int
     let title: String?
     let tabs: [SafariTabSnapshot]
 }
 
-enum SafariAutomationError: LocalizedError, Equatable {
+enum SafariAutomationError: LocalizedError, Equatable, Sendable {
     case safariNotRunning
     case noWindows
     case appleScriptFailed(String)

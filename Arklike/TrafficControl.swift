@@ -1,6 +1,6 @@
 import Foundation
 
-enum TrafficMatcherType: String, Codable, CaseIterable, Identifiable {
+enum TrafficMatcherType: String, Codable, CaseIterable, Identifiable, Sendable {
     case domain
     case wildcard
     case substring
@@ -8,14 +8,14 @@ enum TrafficMatcherType: String, Codable, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
-enum TrafficOpenBehavior: String, Codable, CaseIterable, Identifiable {
+enum TrafficOpenBehavior: String, Codable, CaseIterable, Identifiable, Sendable {
     case newTab
     case newWindow
     case reuseProfileWindow
     var id: String { rawValue }
 }
 
-struct TrafficRule: Identifiable, Codable, Equatable {
+struct TrafficRule: Identifiable, Codable, Equatable, Sendable {
     var id = UUID()
     var enabled = true
     var name: String
@@ -26,7 +26,7 @@ struct TrafficRule: Identifiable, Codable, Equatable {
     var openBehavior: TrafficOpenBehavior = .reuseProfileWindow
 }
 
-struct TrafficRuleMatch: Equatable {
+struct TrafficRuleMatch: Equatable, Sendable {
     let rule: TrafficRule
     let url: URL
 }

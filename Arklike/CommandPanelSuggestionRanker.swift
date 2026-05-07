@@ -1,17 +1,16 @@
 import Foundation
 
-struct CommandPanelFuzzyMatch {
+struct CommandPanelFuzzyMatch: Sendable {
     let score: Double
     let ranges: [Range<String.Index>]
 }
 
-@MainActor
-struct CommandPanelSuggestionRanker {
+struct CommandPanelSuggestionRanker: Sendable {
     func rank(
         _ suggestions: [CommandPanelSuggestion],
         query: String,
         activeScope: CommandPanelSearchScope?,
-        usageStore: CommandPanelUsageStore
+        usageRecords: [String: CommandPanelUsageRecord]
     ) -> [CommandPanelSuggestion] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         let queryProfile = CommandPanelQueryProfile(query: trimmed)
@@ -21,8 +20,8 @@ struct CommandPanelSuggestionRanker {
             }
 
             var ranked = suggestion
-            ranked.usageScore = usageStore.score(for: suggestion.id, query: trimmed)
-            if let record = usageStore.usageRecord(for: suggestion.id) {
+            ranked.usageScore = Self.usageScore(for: suggestion.id, query: trimmed, records: usageRecords)
+            if let record = usageRecords[suggestion.id] {
                 ranked.lastUsedAt = record.lastUsedAt
             }
 
@@ -56,6 +55,19 @@ struct CommandPanelSuggestionRanker {
             if lhs.basePriority != rhs.basePriority { return lhs.basePriority < rhs.basePriority }
             return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
         }
+    }
+
+    private static func usageScore(
+        for id: String,
+        query: String,
+        records: [String: CommandPanelUsageRecord]
+    ) -> Double {
+        guard let record = records[id] else { return 0 }
+        let countScore = min(Double(record.count) * 8, 80)
+        let age = max(0, Date().timeIntervalSince(record.lastUsedAt))
+        let recencyScore = max(0, 30 - age / 86_400)
+        let queryScore = !query.isEmpty && record.lastQuery.localizedCaseInsensitiveContains(query) ? 15 : 0
+        return countScore + recencyScore + Double(queryScore)
     }
 
     private func terminalSortBucket(

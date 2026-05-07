@@ -1,6 +1,6 @@
 import Foundation
 
-struct CommandPanelUsageRecord: Codable, Equatable {
+struct CommandPanelUsageRecord: Codable, Equatable, Sendable {
     var id: String
     var kind: String
     var count: Int
@@ -56,7 +56,13 @@ final class CommandPanelUsageStore {
         records[id]
     }
 
+    var recordsSnapshot: [String: CommandPanelUsageRecord] { records }
+
     func topRecords(limit: Int = 12) -> [CommandPanelUsageRecord] {
+        Self.topRecords(in: records, limit: limit)
+    }
+
+    nonisolated static func topRecords(in records: [String: CommandPanelUsageRecord], limit: Int = 12) -> [CommandPanelUsageRecord] {
         Array(records.values.sorted { lhs, rhs in
             if lhs.count != rhs.count { return lhs.count > rhs.count }
             return lhs.lastUsedAt > rhs.lastUsedAt
@@ -96,7 +102,13 @@ final class CommandPanelSearchHistoryStore {
         defaults.set(queries, forKey: key)
     }
 
+    var queriesSnapshot: [String] { queries }
+
     func matches(for query: String, limit: Int = 5) -> [String] {
+        Self.matches(query: query, in: queries, limit: limit)
+    }
+
+    nonisolated static func matches(query: String, in queries: [String], limit: Int = 5) -> [String] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return [] }
         return Array(queries.filter { $0.localizedCaseInsensitiveContains(trimmed) }.prefix(limit))
@@ -116,7 +128,7 @@ extension CommandPanelSearchHistoryStore {
 }
 #endif
 
-struct CommandPanelRecentItem: Identifiable, Codable, Equatable {
+struct CommandPanelRecentItem: Identifiable, Codable, Equatable, Sendable {
     var id: String { url.absoluteString }
     let url: URL
     var title: String?
@@ -196,7 +208,7 @@ final class CommandPanelRecentStore: ObservableObject {
         defaults.set(data, forKey: key)
     }
 
-    static func normalized(_ url: URL) -> String {
+    nonisolated static func normalized(_ url: URL) -> String {
         var text = url.absoluteString.lowercased()
         if text.hasSuffix("/") { text.removeLast() }
         return text
@@ -211,14 +223,14 @@ extension CommandPanelRecentStore {
 }
 #endif
 
-struct SafariBookmark: Identifiable, Codable, Equatable {
+struct SafariBookmark: Identifiable, Codable, Equatable, Sendable {
     let id: String
     let title: String
     let url: URL
     let path: String?
 }
 
-struct SafariBookmarkIndex: Codable, Equatable {
+struct SafariBookmarkIndex: Codable, Equatable, Sendable {
     var bookmarks: [SafariBookmark]
     var sourceModificationDate: Date?
     var parsedAt: Date
