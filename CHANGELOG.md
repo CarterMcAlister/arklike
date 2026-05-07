@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.0](https://github.com/CarterMcAlister/arklike/compare/v0.2.0...v0.3.0) (2026-05-07)
+
+
+### Features
+
+* add app icon asset ([6eb38b2](https://github.com/CarterMcAlister/arklike/commit/6eb38b2d7a3960d10741be12edbce3aaa6d3436b))
+* improve command palette and settings ([9cdb3f9](https://github.com/CarterMcAlister/arklike/commit/9cdb3f93ebd382b1badcda7ac890a8c9e194bc2e))
+
 ## [0.1.1](https://github.com/CarterMcAlister/arklike/compare/v0.1.0...v0.1.1) (2026-05-05)
 
 
