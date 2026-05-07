@@ -303,3 +303,99 @@ private extension String {
         isEmpty ? nil : self
     }
 }
+
+enum SafariTabSnapshotLoader {
+    static func listWindowsAndTabs() -> Result<[SafariWindowSnapshot], SafariAutomationError> {
+        let script = """
+        tell application "System Events"
+            if not (exists process "Safari") then return "ERROR:Safari not running"
+        end tell
+        tell application "Safari"
+            if (count of windows) is 0 then return ""
+            set windowLines to {}
+            repeat with safariWindow in windows
+                set windowIdText to (id of safariWindow) as text
+                set windowName to ""
+                try
+                    set windowName to name of safariWindow
+                end try
+                set activeTabIndex to 0
+                try
+                    set activeTabIndex to index of current tab of safariWindow
+                end try
+                repeat with safariTab in tabs of safariWindow
+                    set tabIndexText to (index of safariTab) as text
+                    set tabName to ""
+                    set tabURL to ""
+                    try
+                        set tabName to name of safariTab
+                    end try
+                    try
+                        set tabURL to URL of safariTab
+                    end try
+                    set isActiveText to "0"
+                    if (tabIndexText as integer) is activeTabIndex then set isActiveText to "1"
+                    set end of windowLines to windowIdText & tab & windowName & tab & tabIndexText & tab & tabName & tab & tabURL & tab & isActiveText
+                end repeat
+            end repeat
+            set AppleScript's text item delimiters to linefeed
+            set outputText to windowLines as text
+            set AppleScript's text item delimiters to ""
+            return outputText
+        end tell
+        """
+
+        switch runAppleScript(script) {
+        case .success(let output):
+            if output == "ERROR:Safari not running" { return .failure(.safariNotRunning) }
+            if output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return .success([]) }
+            return .success(parseTabSnapshots(output))
+        case .failure(let error):
+            return .failure(error)
+        }
+    }
+
+    private static func parseTabSnapshots(_ output: String) -> [SafariWindowSnapshot] {
+        var grouped: [Int: (title: String?, tabs: [SafariTabSnapshot])] = [:]
+        for line in output.components(separatedBy: .newlines) where !line.isEmpty {
+            let parts = line.components(separatedBy: "\t")
+            guard parts.count >= 6,
+                  let windowId = Int(parts[0]),
+                  let tabIndex = Int(parts[2]) else { continue }
+            let windowTitle = parts[1].nilIfEmpty
+            let title = parts[3].nilIfEmpty
+            let url = URL(string: parts[4])
+            let isActive = parts[5] == "1"
+            let tab = SafariTabSnapshot(
+                windowId: windowId,
+                windowTitle: windowTitle,
+                tabIndex: tabIndex,
+                title: title,
+                url: url,
+                isActive: isActive
+            )
+            var entry = grouped[windowId] ?? (windowTitle, [])
+            entry.tabs.append(tab)
+            grouped[windowId] = entry
+        }
+        return grouped
+            .map { SafariWindowSnapshot(windowId: $0.key, title: $0.value.title, tabs: $0.value.tabs.sorted { $0.tabIndex < $1.tabIndex }) }
+            .sorted { $0.windowId < $1.windowId }
+    }
+
+    private static func runAppleScript(_ source: String) -> Result<String, SafariAutomationError> {
+        var errorInfo: NSDictionary?
+        guard let script = NSAppleScript(source: source) else {
+            return .failure(.appleScriptFailed("Could not compile AppleScript."))
+        }
+        let descriptor = script.executeAndReturnError(&errorInfo)
+        if let errorInfo {
+            let message = errorInfo[NSAppleScript.errorMessage] as? String ?? errorInfo.description
+            if message.localizedCaseInsensitiveContains("not authorized") || message.localizedCaseInsensitiveContains("not permitted") {
+                return .failure(.permissionDenied)
+            }
+            return .failure(.appleScriptFailed(message))
+        }
+        return .success(descriptor.stringValue ?? "")
+    }
+}

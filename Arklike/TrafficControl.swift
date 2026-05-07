@@ -73,6 +73,7 @@ final class TrafficRuleStore: ObservableObject {
     @Published var rules: [TrafficRule] { didSet { save() } }
     private let key = "trafficRules.v1"
     private let defaults = UserDefaults.standard
+    private var isPersistenceEnabled = true
 
     private init() {
         if let data = defaults.data(forKey: key), let decoded = try? JSONDecoder().decode([TrafficRule].self, from: data) {
@@ -90,7 +91,18 @@ final class TrafficRuleStore: ObservableObject {
     func delete(_ rule: TrafficRule) { rules.removeAll { $0.id == rule.id } }
 
     private func save() {
+        guard isPersistenceEnabled else { return }
         guard let data = try? JSONEncoder().encode(rules) else { return }
         defaults.set(data, forKey: key)
     }
 }
+
+#if DEBUG
+extension TrafficRuleStore {
+    func applyPreviewRules(_ rules: [TrafficRule]) {
+        isPersistenceEnabled = false
+        self.rules = rules.sorted { $0.order < $1.order }
+        isPersistenceEnabled = true
+    }
+}
+#endif

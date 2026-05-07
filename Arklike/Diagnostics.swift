@@ -44,3 +44,12 @@ final class Diagnostics: ObservableObject {
         """
     }
 }
+
+#if DEBUG
+extension Diagnostics {
+    func applyPreviewEvents(_ events: [String], lastRoutingDecision: String) {
+        self.events = events
+        self.lastRoutingDecision = lastRoutingDecision
+    }
+}
+#endif

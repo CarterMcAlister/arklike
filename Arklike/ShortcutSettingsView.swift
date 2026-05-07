@@ -94,3 +94,12 @@ struct ShortcutSettingsView: View {
         recordingAction = nil
     }
 }
+
+#if DEBUG
+#Preview("Shortcut Settings") {
+    let _ = PreviewFixtures.configureAppState()
+    ShortcutSettingsView()
+        .padding(20)
+        .frame(width: 720)
+}
+#endif

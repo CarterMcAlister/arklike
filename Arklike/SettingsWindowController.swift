@@ -23,7 +23,7 @@ final class SettingsWindowController {
 
         let hostingController = NSHostingController(rootView: SettingsView(initialDestination: destination))
         let window = NSWindow(contentViewController: hostingController)
-        window.title = destination.title
+        window.title = "Arklike Settings"
         window.setContentSize(NSSize(width: 760, height: 780))
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
         window.isReleasedWhenClosed = false

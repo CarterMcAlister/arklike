@@ -151,3 +151,11 @@ final class PermissionsManager: ObservableObject {
         }
     }
 }
+
+#if DEBUG
+extension PermissionsManager {
+    func applyPreviewSnapshot(_ snapshot: PermissionSnapshot) {
+        self.snapshot = snapshot
+    }
+}
+#endif

@@ -14,7 +14,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         FrontmostSafariMonitor.shared.start()
-        SafariBookmarkStore.shared.refreshIfNeeded(force: false)
+        SafariBookmarkStore.shared.startPeriodicRefresh()
+        ProfileStore.shared.startPeriodicRefresh()
+        SafariLiveTabStore.shared.startPeriodicRefresh()
         ShortcutManager.shared.start { [weak self] action in
             self?.handleShortcut(action)
         }

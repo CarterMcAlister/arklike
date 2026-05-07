@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 
 struct MenuBarIcon {
     static func arkImage() -> NSImage {
@@ -52,3 +53,14 @@ struct MenuBarIcon {
         return image
     }
 }
+
+#if DEBUG
+#Preview("Menu Bar Icon") {
+    Image(nsImage: MenuBarIcon.arkImage())
+        .resizable()
+        .aspectRatio(contentMode: .fit)
+        .foregroundStyle(.primary)
+        .frame(width: 88, height: 72)
+        .padding(24)
+}
+#endif

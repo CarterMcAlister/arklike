@@ -213,6 +213,7 @@ enum SettingsDestination: String, Equatable, Codable, CaseIterable {
     case commandPalette
     case trafficControl
     case permissions
+    case diagnostics
 
     var title: String {
         switch self {
@@ -222,6 +223,7 @@ enum SettingsDestination: String, Equatable, Codable, CaseIterable {
         case .commandPalette: "Command Palette Settings"
         case .trafficControl: "Traffic Control Settings"
         case .permissions: "Permissions Settings"
+        case .diagnostics: "Diagnostics Settings"
         }
     }
 }

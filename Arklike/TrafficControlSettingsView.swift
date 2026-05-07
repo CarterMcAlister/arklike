@@ -42,6 +42,15 @@ struct TrafficControlSettingsView: View {
     }
 }
 
+#if DEBUG
+#Preview("Traffic Control Settings") {
+    let _ = PreviewFixtures.configureAppState()
+    TrafficControlSettingsView()
+        .padding(20)
+        .frame(width: 760)
+}
+#endif
+
 private struct TrafficRuleRow: View {
     @StateObject private var store = TrafficRuleStore.shared
     @State var rule: TrafficRule

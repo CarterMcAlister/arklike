@@ -37,6 +37,7 @@
 		A0000000000000000000A0 /* URLParserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000B0 /* URLParserTests.swift */; };
 		A0000000000000000000A1 /* SearchEngineServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000B1 /* SearchEngineServiceTests.swift */; };
 		A0000000000000000000A2 /* TrafficRuleMatcherTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000B2 /* TrafficRuleMatcherTests.swift */; };
+		A000000000000000000117 /* CommandPanelSuggestionRankerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000000000118 /* CommandPanelSuggestionRankerTests.swift */; };
 		A0000000000000000000C4 /* SettingsWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000C3 /* SettingsWindowController.swift */; };
 		A0000000000000000000D2 /* MenuBarIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000D1 /* MenuBarIcon.swift */; };
 		A0000000000000000000E2 /* ToastHUD.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000E1 /* ToastHUD.swift */; };
@@ -82,6 +83,7 @@
 		A0000000000000000000B0 /* URLParserTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = URLParserTests.swift; sourceTree = "<group>"; };
 		A0000000000000000000B1 /* SearchEngineServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchEngineServiceTests.swift; sourceTree = "<group>"; };
 		A0000000000000000000B2 /* TrafficRuleMatcherTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrafficRuleMatcherTests.swift; sourceTree = "<group>"; };
+		A000000000000000000118 /* CommandPanelSuggestionRankerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandPanelSuggestionRankerTests.swift; sourceTree = "<group>"; };
 		A0000000000000000000B3 /* ArklikeTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ArklikeTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A0000000000000000000C3 /* SettingsWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsWindowController.swift; sourceTree = "<group>"; };
 		A0000000000000000000D1 /* MenuBarIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarIcon.swift; sourceTree = "<group>"; };
@@ -181,6 +183,7 @@
 				A0000000000000000000B0 /* URLParserTests.swift */,
 				A0000000000000000000B1 /* SearchEngineServiceTests.swift */,
 				A0000000000000000000B2 /* TrafficRuleMatcherTests.swift */,
+				A000000000000000000118 /* CommandPanelSuggestionRankerTests.swift */,
 			);
 			path = ArklikeTests;
 			sourceTree = "<group>";
@@ -305,6 +308,7 @@
 				A0000000000000000000A0 /* URLParserTests.swift in Sources */,
 				A0000000000000000000A1 /* SearchEngineServiceTests.swift in Sources */,
 				A0000000000000000000A2 /* TrafficRuleMatcherTests.swift in Sources */,
+				A000000000000000000117 /* CommandPanelSuggestionRankerTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

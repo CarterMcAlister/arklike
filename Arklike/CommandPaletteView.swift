@@ -32,16 +32,13 @@ struct CommandPaletteView: View {
                                 }
                                 .buttonStyle(.plain)
                                 .id(item.id)
-                                .onHover { hovering in
-                                    if hovering { controller.select(index: index) }
-                                }
                             }
                         }
                         .padding(8)
                     }
-                    .onChange(of: state.selectedIndex) { _, newValue in
-                        guard state.suggestions.indices.contains(newValue) else { return }
-                        proxy.scrollTo(state.suggestions[newValue].id, anchor: .center)
+                    .onChange(of: state.selectionScrollRequestID) { _, _ in
+                        guard state.suggestions.indices.contains(state.selectedIndex) else { return }
+                        proxy.scrollTo(state.suggestions[state.selectedIndex].id, anchor: .center)
                     }
                 }
             }
@@ -49,9 +46,12 @@ struct CommandPaletteView: View {
             Divider()
             footer
         }
+        .padding(.top, 12)
         .frame(width: 720, height: 392)
-        .background(.regularMaterial)
-        .onAppear { inputFocused = true }
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .onAppear { focusInput() }
+        .onChange(of: state.inputFocusRequestID) { _, _ in focusInput() }
         .onExitCommand { controller.dismiss() }
         .onMoveCommand { direction in
             switch direction {
@@ -77,6 +77,7 @@ struct CommandPaletteView: View {
                     .font(.title3)
                     .focused($inputFocused)
                     .onSubmit { controller.performSelected() }
+                    .simultaneousGesture(TapGesture().onEnded { focusInput() })
 
                     if state.mode == .search, !state.autocompleteText.isEmpty, !state.query.isEmpty {
                         HStack(spacing: 0) {
@@ -104,6 +105,7 @@ struct CommandPaletteView: View {
             }
             .padding(.horizontal, 12)
             .padding(.top, 0)
+            .padding(.bottom, 8)
 
             if state.mode == .scopePicker {
                 Text("Select a scope to search in")
@@ -114,13 +116,6 @@ struct CommandPaletteView: View {
                     .padding(.bottom, 3)
             } else if state.mode == .actions {
                 Text("Actions for selected item")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 42)
-                    .padding(.bottom, 3)
-            } else if !state.autocompleteText.isEmpty {
-                Text("Right Arrow accepts suggestion")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -191,7 +186,28 @@ struct CommandPaletteView: View {
         let index = state.autocompleteText.index(state.autocompleteText.startIndex, offsetBy: state.query.count)
         return String(state.autocompleteText[index...])
     }
+
+    private func focusInput() {
+        inputFocused = true
+        DispatchQueue.main.async {
+            inputFocused = true
+        }
+    }
 }
+
+#if DEBUG
+#Preview("Command Palette — Search") {
+    CommandPaletteView(controller: .preview(mode: .search))
+}
+
+#Preview("Command Palette — Scopes") {
+    CommandPaletteView(controller: .preview(mode: .scopePicker))
+}
+
+#Preview("Command Palette — Actions") {
+    CommandPaletteView(controller: .preview(mode: .actions))
+}
+#endif
 
 private struct CommandPaletteRow: View {
     let item: CommandPaletteItem
@@ -232,21 +248,19 @@ private struct CommandPaletteRow: View {
     }
 
     private func highlightedText(_ text: String, ranges: [Range<String.Index>], base: Color) -> Text {
-        guard !ranges.isEmpty else { return Text(text).foregroundColor(base) }
-        var result = Text("")
-        var cursor = text.startIndex
-        let sorted = ranges.sorted { $0.lowerBound < $1.lowerBound }
-        for range in sorted where range.lowerBound >= cursor && range.upperBound <= text.endIndex {
-            if cursor < range.lowerBound {
-                result = result + Text(String(text[cursor..<range.lowerBound])).foregroundColor(base)
-            }
-            result = result + Text(String(text[range])).bold().foregroundColor(isSelected ? .white : .accentColor)
-            cursor = range.upperBound
+        var attributed = AttributedString(text)
+        attributed.foregroundColor = base
+
+        for range in ranges {
+            guard range.lowerBound >= text.startIndex,
+                  range.upperBound <= text.endIndex,
+                  let lower = AttributedString.Index(range.lowerBound, within: attributed),
+                  let upper = AttributedString.Index(range.upperBound, within: attributed) else { continue }
+            attributed[lower..<upper].foregroundColor = isSelected ? .white : .accentColor
+            attributed[lower..<upper].inlinePresentationIntent = .stronglyEmphasized
         }
-        if cursor < text.endIndex {
-            result = result + Text(String(text[cursor..<text.endIndex])).foregroundColor(base)
-        }
-        return result
+
+        return Text(attributed)
     }
 
     private var label: String {

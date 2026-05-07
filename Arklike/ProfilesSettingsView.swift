@@ -45,9 +45,21 @@ struct ProfilesSettingsView: View {
             }
         }
         .onAppear {
+#if DEBUG
+            guard !PreviewFixtures.isRunningForPreviews else { return }
+#endif
             if store.profiles.isEmpty {
                 _ = store.refreshFromSafari()
             }
         }
     }
 }
+
+#if DEBUG
+#Preview("Profiles Settings") {
+    let _ = PreviewFixtures.configureAppState()
+    ProfilesSettingsView()
+        .padding(20)
+        .frame(width: 680)
+}
+#endif

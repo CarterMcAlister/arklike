@@ -11,6 +11,8 @@ final class CommandPanelState: ObservableObject {
     @Published var autocompleteText: String = ""
     @Published var autocompleteAccepted: Bool = false
     @Published var actionSourceSuggestion: CommandPanelSuggestion?
+    @Published var inputFocusRequestID: Int = 0
+    @Published var selectionScrollRequestID: Int = 0
 
     var effectiveScope: CommandPanelSearchScope {
         activeScope ?? .all
@@ -40,6 +42,14 @@ final class CommandPanelState: ObservableObject {
         actionSourceSuggestion = nil
     }
 
+    func requestInputFocus() {
+        inputFocusRequestID += 1
+    }
+
+    func requestSelectionScroll() {
+        selectionScrollRequestID += 1
+    }
+
     func setSuggestions(_ next: [CommandPanelSuggestion]) {
         suggestions = next
         if suggestions.isEmpty {
@@ -50,13 +60,24 @@ final class CommandPanelState: ObservableObject {
     }
 
     func moveSelection(delta: Int) {
-        guard !suggestions.isEmpty else { return }
-        selectedIndex = min(max(selectedIndex + delta, 0), suggestions.count - 1)
+        guard !suggestions.isEmpty else {
+            if delta < 0 { requestInputFocus() }
+            return
+        }
+        if delta < 0, selectedIndex == suggestions.startIndex {
+            requestInputFocus()
+            return
+        }
+        let nextIndex = min(max(selectedIndex + delta, 0), suggestions.count - 1)
+        guard nextIndex != selectedIndex else { return }
+        selectedIndex = nextIndex
+        requestSelectionScroll()
     }
 
-    func select(index: Int) {
+    func select(index: Int, scrollToSelection: Bool = false) {
         guard suggestions.indices.contains(index) else { return }
         selectedIndex = index
+        if scrollToSelection { requestSelectionScroll() }
     }
 
     var selectedSuggestion: CommandPanelSuggestion? {

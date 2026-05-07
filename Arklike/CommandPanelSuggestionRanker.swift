@@ -14,6 +14,7 @@ struct CommandPanelSuggestionRanker {
         usageStore: CommandPanelUsageStore
     ) -> [CommandPanelSuggestion] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let queryProfile = CommandPanelQueryProfile(query: trimmed)
         return suggestions.compactMap { suggestion in
             if let activeScope, activeScope != .all, suggestion.scope != activeScope, suggestion.kind != .scope, suggestion.kind != .action, suggestion.kind != .permission {
                 return nil
@@ -45,20 +46,25 @@ struct CommandPanelSuggestionRanker {
             return ranked
         }
         .sorted { lhs, rhs in
-            let lhsBucket = terminalSortBucket(lhs, activeScope: activeScope)
-            let rhsBucket = terminalSortBucket(rhs, activeScope: activeScope)
+            let lhsBucket = terminalSortBucket(lhs, activeScope: activeScope, queryProfile: queryProfile)
+            let rhsBucket = terminalSortBucket(rhs, activeScope: activeScope, queryProfile: queryProfile)
             if lhsBucket != rhsBucket { return lhsBucket < rhsBucket }
 
-            let lhsTotal = totalScore(lhs, query: trimmed)
-            let rhsTotal = totalScore(rhs, query: trimmed)
+            let lhsTotal = totalScore(lhs, queryProfile: queryProfile)
+            let rhsTotal = totalScore(rhs, queryProfile: queryProfile)
             if lhsTotal != rhsTotal { return lhsTotal > rhsTotal }
             if lhs.basePriority != rhs.basePriority { return lhs.basePriority < rhs.basePriority }
             return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
         }
     }
 
-    private func terminalSortBucket(_ suggestion: CommandPanelSuggestion, activeScope: CommandPanelSearchScope?) -> Int {
+    private func terminalSortBucket(
+        _ suggestion: CommandPanelSuggestion,
+        activeScope: CommandPanelSearchScope?,
+        queryProfile: CommandPanelQueryProfile
+    ) -> Int {
         guard activeScope == nil || activeScope == .all else { return 0 }
+        guard queryProfile.shouldDeemphasizeCommandRows else { return 0 }
         switch suggestion.kind {
         case .profile:
             return 1
@@ -69,8 +75,218 @@ struct CommandPanelSuggestionRanker {
         }
     }
 
-    private func totalScore(_ suggestion: CommandPanelSuggestion, query: String) -> Double {
-        Double(1_000 - suggestion.basePriority) + (query.isEmpty ? 0 : suggestion.fuzzyScore) + suggestion.usageScore
+    private func totalScore(_ suggestion: CommandPanelSuggestion, queryProfile: CommandPanelQueryProfile) -> Double {
+        if queryProfile.isEmpty {
+            return emptyQueryScore(suggestion)
+        }
+
+        return suggestion.fuzzyScore
+            + baseUsefulnessScore(suggestion)
+            + intentScore(suggestion, queryProfile: queryProfile)
+            + knownDestinationMatchBoost(suggestion, queryProfile: queryProfile)
+            + suggestion.usageScore
+            + freshnessScore(suggestion)
+            - frictionPenalty(suggestion, queryProfile: queryProfile)
+    }
+
+    private func emptyQueryScore(_ suggestion: CommandPanelSuggestion) -> Double {
+        var score: Double
+        switch suggestion.kind {
+        case .pasteAndGo:
+            score = 4_000
+        case .safariTab:
+            score = 1_100
+        case .historyOrRecent:
+            score = 950
+        case .bookmark:
+            score = 800
+        case .searchHistory:
+            score = 720
+        case .siteShortcut:
+            score = 650
+        case .profile:
+            score = 450
+        case .trafficRule:
+            score = 430
+        case .settings:
+            score = 350
+        case .permission:
+            score = 120
+        case .search:
+            score = 0
+        case .url, .webSuggestion, .exactCommand, .scope, .action:
+            score = 250
+        }
+
+        if suggestion.basePriority <= 2 || suggestion.subtitle.localizedCaseInsensitiveContains("Frequently used") {
+            score += 600
+        }
+        if suggestion.kind == .safariTab, suggestion.subtitle.localizedCaseInsensitiveContains("Active") {
+            score += 220
+        }
+
+        score += suggestion.usageScore
+        score += freshnessScore(suggestion)
+        score -= frictionPenalty(suggestion, queryProfile: .empty)
+        score -= Double(max(suggestion.basePriority, 0)) * 0.25
+        return score
+    }
+
+    private func baseUsefulnessScore(_ suggestion: CommandPanelSuggestion) -> Double {
+        switch suggestion.kind {
+        case .pasteAndGo:
+            return 520
+        case .url:
+            return 260
+        case .safariTab:
+            return 240
+        case .bookmark:
+            return 220
+        case .historyOrRecent:
+            return 190
+        case .searchHistory:
+            return 170
+        case .webSuggestion:
+            return 150
+        case .siteShortcut:
+            return suggestion.representedURL == nil ? 120 : 260
+        case .profile, .trafficRule, .settings:
+            return 120
+        case .search:
+            return 80
+        case .permission:
+            return -80
+        case .exactCommand, .scope, .action:
+            return 160
+        }
+    }
+
+    private func intentScore(_ suggestion: CommandPanelSuggestion, queryProfile: CommandPanelQueryProfile) -> Double {
+        if let parsedURL = queryProfile.parsedURL {
+            return urlIntentScore(suggestion, parsedURL: parsedURL)
+        }
+        if queryProfile.shortcutKeyword != nil {
+            switch suggestion.kind {
+            case .siteShortcut:
+                return suggestion.representedURL == nil ? 420 : 1_200
+            case .search:
+                return -250
+            case .webSuggestion, .searchHistory:
+                return -150
+            default:
+                return 0
+            }
+        }
+
+        var score = 0.0
+        if queryProfile.wantsSettings {
+            score += suggestion.kind == .settings ? 950 : 0
+            if suggestion.kind == .search { score -= 160 }
+        }
+        if queryProfile.wantsProfile {
+            score += suggestion.kind == .profile ? 950 : 0
+            if suggestion.kind == .search { score -= 140 }
+        }
+        if queryProfile.wantsTraffic {
+            score += suggestion.kind == .trafficRule ? 950 : 0
+            if suggestion.kind == .search { score -= 140 }
+        }
+        if queryProfile.wantsBookmarks {
+            score += suggestion.kind == .bookmark ? 700 : 0
+            if suggestion.kind == .search { score -= 100 }
+        }
+        if queryProfile.wantsTabs {
+            score += suggestion.kind == .safariTab ? 700 : 0
+            if suggestion.kind == .search { score -= 100 }
+        }
+
+        if score != 0 { return score }
+
+        switch suggestion.kind {
+        case .searchHistory:
+            return 180
+        case .webSuggestion:
+            return 160
+        case .search:
+            return queryProfile.containsWhitespace ? 120 : 40
+        case .safariTab, .bookmark, .historyOrRecent, .url:
+            return 110
+        case .siteShortcut:
+            return 70
+        default:
+            return 0
+        }
+    }
+
+    private func urlIntentScore(_ suggestion: CommandPanelSuggestion, parsedURL: URL) -> Double {
+        let relationship = urlRelationship(suggestion.representedURL, parsedURL)
+        switch suggestion.kind {
+        case .safariTab:
+            return relationship.exact ? 1_250 : relationship.sameHost ? 700 : 0
+        case .bookmark, .historyOrRecent:
+            return relationship.exact ? 1_120 : relationship.sameHost ? 640 : 0
+        case .trafficRule:
+            return relationship.exact ? 1_050 : relationship.sameHost ? 420 : 0
+        case .url:
+            return relationship.exact ? 760 : relationship.sameHost ? 560 : 0
+        case .pasteAndGo:
+            return relationship.exact ? 720 : relationship.sameHost ? 500 : 0
+        case .search, .webSuggestion, .searchHistory:
+            return -350
+        case .settings, .profile:
+            return -200
+        default:
+            return 0
+        }
+    }
+
+    private func knownDestinationMatchBoost(_ suggestion: CommandPanelSuggestion, queryProfile: CommandPanelQueryProfile) -> Double {
+        switch suggestion.kind {
+        case .safariTab, .bookmark, .historyOrRecent, .url, .pasteAndGo:
+            break
+        default:
+            return 0
+        }
+
+        let query = queryProfile.trimmed.lowercased()
+        guard !query.isEmpty else { return 0 }
+        let title = suggestion.title.lowercased()
+        let subtitle = suggestion.subtitle.lowercased()
+        let urlText = suggestion.representedURL?.absoluteString.lowercased() ?? ""
+        if title == query {
+            return 450
+        }
+        if let representedURL = suggestion.representedURL,
+           CommandPanelRecentStore.normalized(representedURL) == query {
+            return 450
+        }
+        if title.hasPrefix(query) || urlText.hasPrefix(query) {
+            return 300
+        }
+        if title.contains(query) || subtitle.contains(query) || urlText.contains(query) {
+            return 130
+        }
+        return 0
+    }
+
+    private func freshnessScore(_ suggestion: CommandPanelSuggestion) -> Double {
+        guard let lastUsedAt = suggestion.lastUsedAt else { return 0 }
+        let age = max(0, Date().timeIntervalSince(lastUsedAt))
+        return max(0, 45 - age / 14_400)
+    }
+
+    private func frictionPenalty(_ suggestion: CommandPanelSuggestion, queryProfile: CommandPanelQueryProfile) -> Double {
+        var penalty = 0.0
+        if suggestion.kind == .permission {
+            penalty += queryProfile.isEmpty ? 80 : 40
+        }
+        if suggestion.id.hasPrefix("placeholder-") {
+            penalty += 600
+        }
+        if case .noop = suggestion.primaryAction {
+            penalty += queryProfile.isEmpty ? 260 : 150
+        }
+        return penalty
     }
 
     private func alwaysShow(_ suggestion: CommandPanelSuggestion) -> Bool {
@@ -80,6 +296,13 @@ struct CommandPanelSuggestionRanker {
         default:
             false
         }
+    }
+
+    private func urlRelationship(_ candidate: URL?, _ queryURL: URL) -> (exact: Bool, sameHost: Bool) {
+        guard let candidate else { return (false, false) }
+        let exact = CommandPanelRecentStore.normalized(candidate) == CommandPanelRecentStore.normalized(queryURL)
+        let sameHost = candidate.host?.caseInsensitiveCompare(queryURL.host ?? "") == .orderedSame
+        return (exact, sameHost)
     }
 
     static func fuzzyScore(query: String, candidate: String) -> Double {
@@ -201,5 +424,59 @@ struct CommandPanelSuggestionRanker {
             }
         }
         return matrix[a.count][b.count]
+    }
+}
+
+private struct CommandPanelQueryProfile {
+    static let empty = CommandPanelQueryProfile(query: "")
+
+    let trimmed: String
+    let parsedURL: URL?
+    let shortcutKeyword: String?
+    let wantsSettings: Bool
+    let wantsProfile: Bool
+    let wantsTraffic: Bool
+    let wantsBookmarks: Bool
+    let wantsTabs: Bool
+    let containsWhitespace: Bool
+
+    var isEmpty: Bool { trimmed.isEmpty }
+
+    var shouldDeemphasizeCommandRows: Bool {
+        isEmpty || (!wantsSettings && !wantsProfile && !wantsTraffic && !wantsBookmarks && !wantsTabs && parsedURL == nil && shortcutKeyword == nil)
+    }
+
+    init(query: String) {
+        trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        containsWhitespace = trimmed.rangeOfCharacter(from: .whitespacesAndNewlines) != nil
+        if case .url(let url) = URLParser().parse(trimmed) {
+            parsedURL = url
+        } else {
+            parsedURL = nil
+        }
+
+        let lowercased = trimmed.lowercased()
+        shortcutKeyword = Self.shortcutKeyword(in: lowercased)
+        wantsSettings = Self.containsAny(lowercased, ["setting", "settings", "preference", "preferences", "pref", "config", "toggle", "clear", "refresh", "shortcut", "permission", "permissions"])
+        wantsProfile = Self.containsAny(lowercased, ["profile", "profiles", "prof"]) || lowercased.range(of: #"^p\d+$"#, options: .regularExpression) != nil
+        wantsTraffic = Self.containsAny(lowercased, ["traffic", "rule", "rules", "route", "routing"])
+        wantsBookmarks = Self.containsAny(lowercased, ["bookmark", "bookmarks", "favorite", "favorites", "saved"])
+        wantsTabs = Self.containsAny(lowercased, ["tab", "tabs", "safari"])
+    }
+
+    private static func containsAny(_ text: String, _ needles: [String]) -> Bool {
+        needles.contains { text.localizedCaseInsensitiveContains($0) }
+    }
+
+    private static func shortcutKeyword(in query: String) -> String? {
+        let shortcuts = ["g", "google", "ddg", "duckduckgo", "gh", "github", "yt", "youtube"]
+        let parts = query.split(separator: " ", maxSplits: 1).map(String.init)
+        guard let first = parts.first?.trimmingCharacters(in: CharacterSet(charactersIn: ":")), shortcuts.contains(first) else {
+            return nil
+        }
+        if parts.count > 1 || query.hasPrefix(first + ":") || query == first {
+            return first
+        }
+        return nil
     }
 }

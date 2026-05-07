@@ -24,3 +24,12 @@ struct DiagnosticsView: View {
         }
     }
 }
+
+#if DEBUG
+#Preview("Diagnostics") {
+    let _ = PreviewFixtures.configureAppState()
+    DiagnosticsView()
+        .padding(20)
+        .frame(width: 700)
+}
+#endif

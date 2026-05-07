@@ -9,6 +9,7 @@ struct SafariWindowContext: Equatable {
     let accessibilityWindowNumber: Int?
     let title: String?
     let profileHint: String?
+    let center: CGPoint?
     let source: Source
     let observedAt: Date
 
@@ -24,6 +25,7 @@ struct FrontmostSafariSnapshot: Equatable {
     let frontmostBundleIdentifier: String?
     let safariProcessIdentifier: pid_t?
     let activeWindow: SafariWindowContext?
+    let lastActiveSafariWindow: SafariWindowContext?
     let shortcutOverridesEnabled: Bool
     let commandPaletteShortcutEnabled: Bool
     let copyURLShortcutEnabled: Bool
@@ -57,6 +59,7 @@ struct FrontmostSafariSnapshot: Equatable {
             frontmostBundleIdentifier: nil,
             safariProcessIdentifier: nil,
             activeWindow: nil,
+            lastActiveSafariWindow: nil,
             shortcutOverridesEnabled: settings.safariShortcutOverridesEnabled,
             commandPaletteShortcutEnabled: settings.commandPaletteShortcutEnabled,
             copyURLShortcutEnabled: settings.copyURLShortcutEnabled,
@@ -144,23 +147,40 @@ final class FrontmostSafariMonitor: ObservableObject {
         return snapshot.activeWindow
     }
 
+    func lastActiveWindowForSafariAction() -> SafariWindowContext? {
+        if snapshot.isSafariFrontmost {
+            refresh(reason: "last active action requested")
+        }
+        return lastActiveSafariWindow(from: snapshot.activeWindow) ?? snapshot.lastActiveSafariWindow
+    }
+
     private func publish(
         isSafariFrontmost: Bool,
         frontmostBundleIdentifier: String?,
         safariProcessIdentifier: pid_t?,
         activeWindow: SafariWindowContext?
     ) {
+        let nextLastActiveSafariWindow = lastActiveSafariWindow(from: activeWindow) ?? snapshot.lastActiveSafariWindow
         snapshot = FrontmostSafariSnapshot(
             isSafariFrontmost: isSafariFrontmost,
             frontmostBundleIdentifier: frontmostBundleIdentifier,
             safariProcessIdentifier: safariProcessIdentifier,
             activeWindow: activeWindow,
+            lastActiveSafariWindow: nextLastActiveSafariWindow,
             shortcutOverridesEnabled: settings.safariShortcutOverridesEnabled,
             commandPaletteShortcutEnabled: settings.commandPaletteShortcutEnabled,
             copyURLShortcutEnabled: settings.copyURLShortcutEnabled,
             sidebarShortcutEnabled: settings.sidebarShortcutEnabled,
             profileShortcutsEnabled: settings.profileShortcutsEnabled
         )
+    }
+
+    private func lastActiveSafariWindow(from activeWindow: SafariWindowContext?) -> SafariWindowContext? {
+        guard let activeWindow else { return nil }
+        if activeWindow.safariWindowId != nil || activeWindow.accessibilityWindowNumber != nil || activeWindow.title?.isEmpty == false {
+            return activeWindow
+        }
+        return nil
     }
 
     private func configureAXObserverIfNeeded(for pid: pid_t) {
@@ -237,6 +257,7 @@ final class FrontmostSafariMonitor: ObservableObject {
             accessibilityWindowNumber: nil,
             title: nil,
             profileHint: nil,
+            center: nil,
             source: .unavailable,
             observedAt: Date()
         )
@@ -257,6 +278,7 @@ final class FrontmostSafariMonitor: ObservableObject {
         let title = stringAttribute(kAXTitleAttribute, from: windowElement)
         let axWindowNumber = intAttribute("AXWindowNumber", from: windowElement)
         let safariWindowId = appleScriptWindowIdMatching(title: title, axWindowNumber: axWindowNumber)
+        let center = accessibilityWindowCenterInAppKitCoordinates(from: windowElement)
 
         return SafariWindowContext(
             processIdentifier: pid,
@@ -264,6 +286,7 @@ final class FrontmostSafariMonitor: ObservableObject {
             accessibilityWindowNumber: axWindowNumber,
             title: title,
             profileHint: Self.profileHint(from: title),
+            center: center,
             source: .accessibilityFocusedWindow,
             observedAt: Date()
         )
@@ -278,6 +301,7 @@ final class FrontmostSafariMonitor: ObservableObject {
             accessibilityWindowNumber: nil,
             title: firstWindow.title,
             profileHint: Self.profileHint(from: firstWindow.title),
+            center: nil,
             source: .appleScriptWindowEnumeration,
             observedAt: Date()
         )
@@ -365,6 +389,45 @@ final class FrontmostSafariMonitor: ObservableObject {
         return nil
     }
 
+    private func accessibilityWindowCenterInAppKitCoordinates(from element: AXUIElement) -> CGPoint? {
+        var positionValue: CFTypeRef?
+        var sizeValue: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, kAXPositionAttribute as CFString, &positionValue) == .success,
+              AXUIElementCopyAttributeValue(element, kAXSizeAttribute as CFString, &sizeValue) == .success,
+              let positionValue, let sizeValue else { return nil }
+
+        var quartzOrigin = CGPoint.zero
+        var windowSize = CGSize.zero
+        guard AXValueGetValue(positionValue as! AXValue, .cgPoint, &quartzOrigin),
+              AXValueGetValue(sizeValue as! AXValue, .cgSize, &windowSize) else { return nil }
+
+        let quartzCenter = CGPoint(
+            x: quartzOrigin.x + windowSize.width / 2,
+            y: quartzOrigin.y + windowSize.height / 2
+        )
+
+        for screen in NSScreen.screens {
+            guard let displayID = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID else { continue }
+            let displayBounds = CGDisplayBounds(displayID)
+            guard displayBounds.contains(quartzCenter) else { continue }
+
+            let xWithinDisplay = quartzCenter.x - displayBounds.minX
+            let yWithinDisplayFromTop = quartzCenter.y - displayBounds.minY
+            return CGPoint(
+                x: screen.frame.minX + xWithinDisplay,
+                y: screen.frame.maxY - yWithinDisplayFromTop
+            )
+        }
+
+        if let screen = NSScreen.main {
+            return CGPoint(
+                x: screen.frame.minX + quartzCenter.x,
+                y: screen.frame.maxY - quartzCenter.y
+            )
+        }
+        return nil
+    }
+
     private static func profileHint(from title: String?) -> String? {
         guard let title, !title.isEmpty else { return nil }
 
@@ -385,6 +448,15 @@ final class FrontmostSafariMonitor: ObservableObject {
         return nil
     }
 }
+
+#if DEBUG
+extension FrontmostSafariMonitor {
+    func applyPreviewSnapshot(_ snapshot: FrontmostSafariSnapshot) {
+        stopAXObserver()
+        self.snapshot = snapshot
+    }
+}
+#endif
 
 private let axObserverCallback: AXObserverCallback = { _, _, notification, refcon in
     guard let refcon else { return }

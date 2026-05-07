@@ -1,6 +1,11 @@
 import AppKit
 import ApplicationServices
+import Combine
 import SwiftUI
+
+private final class CommandPalettePanel: NSPanel {
+    override var canBecomeKey: Bool { true }
+}
 
 @MainActor
 final class CommandPaletteController: ObservableObject {
@@ -23,7 +28,9 @@ final class CommandPaletteController: ObservableObject {
     private var outsideClickMonitor: Any?
     private var dismissEventTap: CFMachPort?
     private var dismissEventTapSource: CFRunLoopSource?
-    private var tabRefreshWorkItem: DispatchWorkItem?
+    private var storeCancellables: Set<AnyCancellable> = []
+    private var emptyQuerySuggestionCache: [CommandPaletteItem] = []
+    private var isEmptyQuerySuggestionCacheValid = false
     private var clipboardURL: URL?
     private var webSuggestions: [String] = []
 
@@ -47,17 +54,13 @@ final class CommandPaletteController: ObservableObject {
             TrafficRuleCommandProvider(),
             SettingsCommandProvider()
         ])
+        bindCachedStores()
         refreshItems()
     }
 
     func show() {
-        tabRefreshWorkItem?.cancel()
-        liveTabStore.reset()
         webSuggestions = []
         clipboardURL = Self.clipboardURLForPanelOpen()
-        bookmarkStore.refreshIfNeeded(force: false)
-        _ = ProfileStore.shared.refreshFromSafari()
-        liveTabStore.refresh()
         state.resetForOpen()
         refreshItems()
 
@@ -72,16 +75,14 @@ final class CommandPaletteController: ObservableObject {
             panel.orderFrontRegardless()
             panel.makeKey()
         }
+        state.requestInputFocus()
 
         installKeyMonitor()
         installOutsideClickMonitor()
         installDismissEventTap()
-        scheduleSafariTabRefresh()
     }
 
     func dismiss(returnFocusToSafari: Bool = true) {
-        tabRefreshWorkItem?.cancel()
-        tabRefreshWorkItem = nil
         CommandPanelWebSuggestionService.shared.cancel()
         removeKeyMonitor()
         removeOutsideClickMonitor()
@@ -108,8 +109,8 @@ final class CommandPaletteController: ObservableObject {
         state.moveSelection(delta: delta)
     }
 
-    func select(index: Int) {
-        state.select(index: index)
+    func select(index: Int, scrollToSelection: Bool = false) {
+        state.select(index: index, scrollToSelection: scrollToSelection)
     }
 
     func performSelected() {
@@ -119,6 +120,7 @@ final class CommandPaletteController: ObservableObject {
 
     func perform(_ item: CommandPaletteItem) {
         suggestionManager.recordSelection(item, query: state.query)
+        invalidateEmptyQuerySuggestionCache()
         switch item.action {
         case .openURL(let url):
             openURL(url, title: item.title)
@@ -132,7 +134,7 @@ final class CommandPaletteController: ObservableObject {
                 _ = SafariAutomation.shared.activateWindow(windowId: windowId)
             }
             if let url = item.representedURL { remember(url, title: item.title) }
-            scheduleSafariTabRefresh()
+            liveTabStore.scheduleRefresh(after: 0.5)
             dismiss(returnFocusToSafari: false)
         case .openProfile(let number):
             switch SafariProfileManager.shared.switchToProfile(number: number) {
@@ -177,7 +179,7 @@ final class CommandPaletteController: ObservableObject {
             refreshItems()
         case .refreshSafariBookmarks:
             bookmarkStore.reload(force: true)
-            refreshItems()
+            invalidateEmptyQuerySuggestionCache()
         case .activateScope(let scope):
             state.activeScope = scope == .all ? nil : scope
             state.endScopePicker()
@@ -221,7 +223,7 @@ final class CommandPaletteController: ObservableObject {
             _ = SafariAutomation.shared.openURLInNewTab(url, preferredWindowId: preferredWindowId)
         }
         remember(url, title: title)
-        scheduleSafariTabRefresh()
+        liveTabStore.scheduleRefresh(after: 0.5)
         dismiss(returnFocusToSafari: false)
     }
 
@@ -237,7 +239,45 @@ final class CommandPaletteController: ObservableObject {
     }
 
     private func refreshItems() {
-        let context = CommandPanelContext(
+        if shouldUseEmptyQuerySuggestionCache {
+            state.setSuggestions(emptyQuerySuggestionsForCurrentClipboard())
+            updateAutocomplete()
+            objectWillChange.send()
+            return
+        }
+
+        let context = commandPanelContext(clipboardURL: clipboardURL, webSuggestions: webSuggestions)
+        state.setSuggestions(suggestionManager.suggestions(state: state, context: context))
+        updateAutocomplete()
+        objectWillChange.send()
+    }
+
+    private var shouldUseEmptyQuerySuggestionCache: Bool {
+        state.mode == .search
+            && state.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && state.activeScope == nil
+            && webSuggestions.isEmpty
+    }
+
+    private func emptyQuerySuggestionsForCurrentClipboard() -> [CommandPaletteItem] {
+        if !isEmptyQuerySuggestionCacheValid { rebuildEmptyQuerySuggestionCache() }
+        guard let clipboardURL else { return emptyQuerySuggestionCache }
+        return [pasteAndGoSuggestion(for: clipboardURL)] + emptyQuerySuggestionCache.filter { $0.id != "paste-and-go-\(clipboardURL.absoluteString)" }
+    }
+
+    private func rebuildEmptyQuerySuggestionCache() {
+        let cacheState = CommandPanelState()
+        let context = commandPanelContext(clipboardURL: nil, webSuggestions: [])
+        emptyQuerySuggestionCache = suggestionManager.suggestions(state: cacheState, context: context)
+        isEmptyQuerySuggestionCacheValid = true
+    }
+
+    private func invalidateEmptyQuerySuggestionCache() {
+        isEmptyQuerySuggestionCacheValid = false
+    }
+
+    private func commandPanelContext(clipboardURL: URL?, webSuggestions: [String]) -> CommandPanelContext {
+        CommandPanelContext(
             safariSnapshot: FrontmostSafariMonitor.shared.snapshot,
             recentItems: recentStore.items,
             safariTabs: liveTabStore.tabs,
@@ -247,9 +287,78 @@ final class CommandPaletteController: ObservableObject {
             bookmarks: bookmarkStore.bookmarks,
             bookmarkError: bookmarkStore.lastError
         )
-        state.setSuggestions(suggestionManager.suggestions(state: state, context: context))
-        updateAutocomplete()
-        objectWillChange.send()
+    }
+
+    private func pasteAndGoSuggestion(for url: URL) -> CommandPaletteItem {
+        CommandPanelSuggestion(
+            id: "paste-and-go-\(url.absoluteString)",
+            title: "Paste and Go",
+            subtitle: url.absoluteString,
+            kind: .pasteAndGo,
+            scope: .all,
+            representedURL: url,
+            primaryAction: .openURL(url),
+            alternateActions: [CommandPanelAlternateAction(id: "copy-url", title: "Copy URL", subtitle: url.absoluteString, iconSystemName: "doc.on.doc", action: .copyURL(url))],
+            basePriority: -100
+        )
+    }
+
+    private func bindCachedStores() {
+        liveTabStore.objectWillChange.sink { [weak self] _ in
+            Task { @MainActor in
+                self?.invalidateEmptyQuerySuggestionCache()
+                self?.refreshItems()
+            }
+        }.store(in: &storeCancellables)
+
+        bookmarkStore.objectWillChange.sink { [weak self] _ in
+            Task { @MainActor in
+                self?.invalidateEmptyQuerySuggestionCache()
+                self?.refreshItems()
+            }
+        }.store(in: &storeCancellables)
+
+        ProfileStore.shared.objectWillChange.sink { [weak self] _ in
+            Task { @MainActor in
+                self?.invalidateEmptyQuerySuggestionCache()
+                self?.refreshItems()
+            }
+        }.store(in: &storeCancellables)
+
+        recentStore.objectWillChange.sink { [weak self] _ in
+            Task { @MainActor in
+                self?.invalidateEmptyQuerySuggestionCache()
+                self?.refreshItems()
+            }
+        }.store(in: &storeCancellables)
+
+        TrafficRuleStore.shared.objectWillChange.sink { [weak self] _ in
+            Task { @MainActor in
+                self?.invalidateEmptyQuerySuggestionCache()
+                self?.refreshItems()
+            }
+        }.store(in: &storeCancellables)
+
+        AppSettings.shared.objectWillChange.sink { [weak self] _ in
+            Task { @MainActor in
+                self?.invalidateEmptyQuerySuggestionCache()
+                self?.refreshItems()
+            }
+        }.store(in: &storeCancellables)
+
+        FrontmostSafariMonitor.shared.$snapshot.sink { [weak self] snapshot in
+            Task { @MainActor in
+                guard let self else { return }
+                if self.panel?.isVisible == true,
+                   !snapshot.isSafariFrontmost,
+                   snapshot.frontmostBundleIdentifier != Bundle.main.bundleIdentifier {
+                    self.dismiss(returnFocusToSafari: false)
+                    return
+                }
+                self.invalidateEmptyQuerySuggestionCache()
+                self.refreshItems()
+            }
+        }.store(in: &storeCancellables)
     }
 
     private func updateAutocomplete() {
@@ -287,34 +396,6 @@ final class CommandPaletteController: ObservableObject {
             self.webSuggestions = suggestions
             self.refreshItems()
         }
-    }
-
-    private func scheduleSafariTabRefresh() {
-        tabRefreshWorkItem?.cancel()
-        let workItem = DispatchWorkItem { [weak self] in
-            Task { @MainActor in
-                guard let self, self.panel?.isVisible == true else { return }
-                self.liveTabStore.refresh()
-                self.refreshItems()
-                self.scheduleRepeatingSafariTabRefresh()
-            }
-        }
-        tabRefreshWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: workItem)
-    }
-
-    private func scheduleRepeatingSafariTabRefresh() {
-        tabRefreshWorkItem?.cancel()
-        let workItem = DispatchWorkItem { [weak self] in
-            Task { @MainActor in
-                guard let self, self.panel?.isVisible == true else { return }
-                self.liveTabStore.refresh()
-                self.refreshItems()
-                self.scheduleRepeatingSafariTabRefresh()
-            }
-        }
-        tabRefreshWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + 5, execute: workItem)
     }
 
     private func remember(_ url: URL, title: String? = nil) {
@@ -374,10 +455,6 @@ final class CommandPaletteController: ObservableObject {
                 }
                 return event
             case 51:
-                if !self.state.autocompleteText.isEmpty {
-                    self.rejectAutocomplete()
-                    return nil
-                }
                 if self.state.mode == .search, self.state.query.isEmpty, self.state.activeScope != nil {
                     self.state.clearScope()
                     self.refreshItems()
@@ -508,17 +585,17 @@ final class CommandPaletteController: ObservableObject {
     private func makePanel() -> NSPanel {
         let root = CommandPaletteView(controller: self)
         let hosting = NSHostingController(rootView: root)
-        let panel = NSPanel(
+        let panel = CommandPalettePanel(
             contentRect: NSRect(x: 0, y: 0, width: 720, height: 392),
-            styleMask: [.titled, .fullSizeContentView, .nonactivatingPanel],
+            styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
         )
         panel.title = "Arklike Command Palette"
-        panel.titleVisibility = .hidden
-        panel.titlebarAppearsTransparent = true
-        panel.toolbar = nil
         panel.isFloatingPanel = true
+        panel.backgroundColor = .clear
+        panel.isOpaque = false
+        panel.hasShadow = true
         panel.level = .floating
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.animationBehavior = .none
@@ -527,7 +604,7 @@ final class CommandPaletteController: ObservableObject {
     }
 
     private func position(panel: NSPanel) {
-        let center = activeSafariWindowCenterInAppKitCoordinates()
+        let center = FrontmostSafariMonitor.shared.snapshot.activeWindow?.center
             ?? NSScreen.main.map { NSPoint(x: $0.visibleFrame.midX, y: $0.visibleFrame.midY) }
             ?? NSScreen.screens.first.map { NSPoint(x: $0.visibleFrame.midX, y: $0.visibleFrame.midY) }
         guard let center else { return }
@@ -538,51 +615,56 @@ final class CommandPaletteController: ObservableObject {
             y: center.y - size.height / 2
         ))
     }
+}
 
-    private func activeSafariWindowCenterInAppKitCoordinates() -> NSPoint? {
-        guard let safari = NSRunningApplication.runningApplications(withBundleIdentifier: FrontmostSafariMonitor.safariBundleIdentifier).first else { return nil }
-        let appElement = AXUIElementCreateApplication(safari.processIdentifier)
-        var windowValue: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(appElement, kAXFocusedWindowAttribute as CFString, &windowValue) == .success,
-              let window = windowValue else { return nil }
-        let element = window as! AXUIElement
-        var positionValue: CFTypeRef?
-        var sizeValue: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(element, kAXPositionAttribute as CFString, &positionValue) == .success,
-              AXUIElementCopyAttributeValue(element, kAXSizeAttribute as CFString, &sizeValue) == .success,
-              let positionValue, let sizeValue else { return nil }
-        var quartzOrigin = CGPoint.zero
-        var windowSize = CGSize.zero
-        guard AXValueGetValue(positionValue as! AXValue, .cgPoint, &quartzOrigin),
-              AXValueGetValue(sizeValue as! AXValue, .cgSize, &windowSize) else { return nil }
+#if DEBUG
+extension CommandPaletteController {
+    static func preview(mode: CommandPanelMode = .search) -> CommandPaletteController {
+        PreviewFixtures.configureAppState()
+        let controller = shared
+        controller.webSuggestions = ["swift concurrency", "swiftui command palette"]
+        controller.clipboardURL = URL(string: "https://developer.apple.com")
+        controller.isEmptyQuerySuggestionCacheValid = false
+        controller.state.resetForOpen()
 
-        let quartzCenter = CGPoint(
-            x: quartzOrigin.x + windowSize.width / 2,
-            y: quartzOrigin.y + windowSize.height / 2
-        )
-
-        for screen in NSScreen.screens {
-            guard let displayID = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID else { continue }
-            let displayBounds = CGDisplayBounds(displayID)
-            guard displayBounds.contains(quartzCenter) else { continue }
-
-            let xWithinDisplay = quartzCenter.x - displayBounds.minX
-            let yWithinDisplayFromTop = quartzCenter.y - displayBounds.minY
-            return NSPoint(
-                x: screen.frame.minX + xWithinDisplay,
-                y: screen.frame.maxY - yWithinDisplayFromTop
-            )
+        switch mode {
+        case .search:
+            controller.state.query = "git"
+            controller.state.autocompleteText = "github.com"
+            controller.state.setSuggestions(PreviewFixtures.commandPaletteSuggestions)
+            controller.state.selectedIndex = 0
+        case .scopePicker:
+            controller.state.beginScopePicker()
+            controller.state.scopePickerQuery = "tab"
+            controller.state.setSuggestions(CommandPanelSearchScope.allCases.map { scope in
+                CommandPanelSuggestion(
+                    id: "preview-scope-\(scope.rawValue)",
+                    title: scope.title,
+                    subtitle: "Limit command palette results to \(scope.title.lowercased())",
+                    kind: .scope,
+                    scope: scope,
+                    representedURL: nil,
+                    primaryAction: .activateScope(scope),
+                    basePriority: 0
+                )
+            })
+            controller.state.selectedIndex = 2
+        case .actions:
+            let source = PreviewFixtures.commandPaletteSuggestions[0]
+            controller.state.query = "github"
+            controller.state.beginActions(for: source)
+            controller.state.setSuggestions([
+                CommandPanelSuggestion(id: "preview-action-open", title: "Open", subtitle: source.subtitle, kind: .action, scope: nil, iconSystemName: "arrow.up.right.square", representedURL: source.representedURL, primaryAction: source.primaryAction, basePriority: 0),
+                CommandPanelSuggestion(id: "preview-action-copy", title: "Copy URL", subtitle: source.representedURL?.absoluteString ?? "", kind: .action, scope: nil, iconSystemName: "doc.on.doc", representedURL: source.representedURL, primaryAction: .copyText(source.representedURL?.absoluteString ?? ""), basePriority: 1),
+                CommandPanelSuggestion(id: "preview-action-settings", title: "Open Traffic Control Settings", subtitle: "Edit routing rules", kind: .action, scope: nil, iconSystemName: "gearshape", representedURL: nil, primaryAction: .openSettings(.trafficControl), basePriority: 2)
+            ])
+            controller.state.selectedIndex = 1
         }
 
-        if let screen = NSScreen.main {
-            return NSPoint(
-                x: screen.frame.minX + quartzCenter.x,
-                y: screen.frame.maxY - quartzCenter.y
-            )
-        }
-        return nil
+        return controller
     }
 }
+#endif
 
 private let commandPaletteDismissEventTapCallback: CGEventTapCallBack = { _, type, event, refcon in
     guard let refcon else { return Unmanaged.passUnretained(event) }

@@ -23,9 +23,28 @@ final class DefaultBrowserRouter {
                 _ = SafariProfileManager.shared.openURL(url, in: profile)
             }
         } else {
+            if openInLastActiveSafariWindow(url) {
+                return
+            }
             Diagnostics.shared.lastRoutingDecision = "No match for \(url.absoluteString); opened directly in Safari"
             Diagnostics.shared.log(Diagnostics.shared.lastRoutingDecision)
             openDirectlyInSafari(url)
+        }
+    }
+
+    private func openInLastActiveSafariWindow(_ url: URL) -> Bool {
+        guard let lastActiveWindow = FrontmostSafariMonitor.shared.lastActiveWindowForSafariAction() else {
+            return false
+        }
+        switch SafariAutomation.shared.openURLInNewTab(url, preferredWindowId: lastActiveWindow.safariWindowId) {
+        case .success:
+            let windowDescription = lastActiveWindow.safariWindowId.map { "window \($0)" } ?? "the last active Safari window"
+            Diagnostics.shared.lastRoutingDecision = "No match for \(url.absoluteString); opened in \(windowDescription)"
+            Diagnostics.shared.log(Diagnostics.shared.lastRoutingDecision)
+            return true
+        case .failure(let error):
+            Diagnostics.shared.log("Could not open unmatched URL in last active Safari window: \(error.localizedDescription)")
+            return false
         }
     }
 

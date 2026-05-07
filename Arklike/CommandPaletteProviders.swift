@@ -251,9 +251,11 @@ struct SettingsCommandProvider: CommandPanelSuggestionProviding {
         guard state.activeScope == nil || state.activeScope == .all || state.activeScope == .settings else { return [] }
         let rows: [CommandPanelSuggestion] = [
             settingsRow("settings-general", "Open Settings", "Return to run this command", .openSettings(.general), "gearshape"),
+            settingsRow("settings-permissions", "Open Permissions Settings", "Return to run this command", .openSettings(.permissions), "lock.shield"),
             settingsRow("settings-shortcuts", "Open Shortcuts Settings", "Return to run this command", .openSettings(.shortcuts), "keyboard"),
             settingsRow("settings-profiles", "Open Profiles Settings", "Return to run this command", .openSettings(.profiles), "person.crop.circle"),
             settingsRow("settings-traffic", "Open Traffic Control Settings", "Return to run this command", .openSettings(.trafficControl), "arrow.triangle.branch"),
+            settingsRow("settings-diagnostics", "Open Diagnostics Settings", "Return to run this command", .openSettings(.diagnostics), "stethoscope"),
             settingsRow("settings-web-suggestions", "Toggle Web Suggestions", AppSettings.shared.webSearchSuggestionsEnabled ? "On • Return to toggle this setting" : "Off • Return to toggle this setting", .toggleWebSuggestions, "sparkles"),
             settingsRow("settings-duplicate-tabs", "Toggle Existing Tab Switching", AppSettings.shared.switchToExistingSafariTabInsteadOfOpeningDuplicate ? "On • Return to toggle this setting" : "Off • Return to toggle this setting", .toggleDuplicateTabSwitching, "rectangle.on.rectangle"),
             settingsRow("settings-clear-recents", "Clear Recents", "Return to run this command", .clearRecents, "trash"),
