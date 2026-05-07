@@ -12,6 +12,7 @@
 		A00000000000000000000013 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000003 /* SettingsView.swift */; };
 		A00000000000000000000014 /* PermissionsManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000007 /* PermissionsManager.swift */; };
 		A00000000000000000000015 /* AppSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000008 /* AppSettings.swift */; };
+		A00000000000000000000120 /* LaunchAtLoginController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000121 /* LaunchAtLoginController.swift */; };
 		A00000000000000000000016 /* FrontmostSafariMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000009 /* FrontmostSafariMonitor.swift */; };
 		A00000000000000000000017 /* KeyboardShortcut.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000000A /* KeyboardShortcut.swift */; };
 		A00000000000000000000018 /* ShortcutManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000000B /* ShortcutManager.swift */; };
@@ -58,6 +59,7 @@
 		A00000000000000000000005 /* Arklike.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Arklike.entitlements; sourceTree = "<group>"; };
 		A00000000000000000000007 /* PermissionsManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionsManager.swift; sourceTree = "<group>"; };
 		A00000000000000000000008 /* AppSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettings.swift; sourceTree = "<group>"; };
+		A00000000000000000000121 /* LaunchAtLoginController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchAtLoginController.swift; sourceTree = "<group>"; };
 		A00000000000000000000009 /* FrontmostSafariMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrontmostSafariMonitor.swift; sourceTree = "<group>"; };
 		A0000000000000000000000A /* KeyboardShortcut.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardShortcut.swift; sourceTree = "<group>"; };
 		A0000000000000000000000B /* ShortcutManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShortcutManager.swift; sourceTree = "<group>"; };
@@ -145,6 +147,7 @@
 				A0000000000000000000C3 /* SettingsWindowController.swift */,
 				A00000000000000000000007 /* PermissionsManager.swift */,
 				A00000000000000000000008 /* AppSettings.swift */,
+				A00000000000000000000121 /* LaunchAtLoginController.swift */,
 				A00000000000000000000009 /* FrontmostSafariMonitor.swift */,
 				A0000000000000000000000A /* KeyboardShortcut.swift */,
 				A0000000000000000000000B /* ShortcutManager.swift */,
@@ -299,6 +302,7 @@
 				A0000000000000000000C4 /* SettingsWindowController.swift in Sources */,
 				A00000000000000000000014 /* PermissionsManager.swift in Sources */,
 				A00000000000000000000015 /* AppSettings.swift in Sources */,
+				A00000000000000000000120 /* LaunchAtLoginController.swift in Sources */,
 				A00000000000000000000016 /* FrontmostSafariMonitor.swift in Sources */,
 				A00000000000000000000017 /* KeyboardShortcut.swift in Sources */,
 				A00000000000000000000018 /* ShortcutManager.swift in Sources */,

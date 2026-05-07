@@ -63,7 +63,8 @@ cask "$TAP_CASK_TOKEN" do
 
   app "$APP_NAME.app"
 
-  uninstall quit: "$BUNDLE_ID"
+  uninstall quit: "$BUNDLE_ID",
+            login_item: "$APP_NAME"
 
   zap trash: [
     "~/Library/Preferences/$BUNDLE_ID.plist",

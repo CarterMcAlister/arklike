@@ -29,6 +29,7 @@ private enum SettingsTab: Hashable {
 struct SettingsView: View {
     @StateObject private var permissions = PermissionsManager.shared
     @StateObject private var appSettings = AppSettings.shared
+    @StateObject private var launchAtLogin = LaunchAtLoginController.shared
     @StateObject private var safariMonitor = FrontmostSafariMonitor.shared
     @StateObject private var bookmarkStore = SafariBookmarkStore.shared
     @State private var selectedTab: SettingsTab
@@ -69,6 +70,7 @@ struct SettingsView: View {
             guard !PreviewFixtures.isRunningForPreviews else { return }
 #endif
             permissions.refresh()
+            launchAtLogin.refresh()
             safariMonitor.start()
             safariMonitor.refresh(reason: "settings appear")
         }
@@ -86,9 +88,22 @@ struct SettingsView: View {
             )
 
             VStack(alignment: .leading, spacing: 12) {
+                Toggle("Launch Arklike at login", isOn: Binding(
+                    get: { launchAtLogin.isEnabled },
+                    set: { launchAtLogin.setEnabled($0) }
+                ))
+                .toggleStyle(.switch)
+
+                if let errorMessage = launchAtLogin.errorMessage {
+                    Text("Could not update login item: \(errorMessage)")
+                        .font(.callout)
+                        .foregroundStyle(.red)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
                 Toggle("Enable Arklike features in Safari", isOn: $appSettings.safariShortcutOverridesEnabled)
                     .toggleStyle(.switch)
-                Text("When this is off, Arklike leaves Safari shortcuts alone and does not run Safari-scoped shortcut actions.")
+                Text("Launch at login starts Arklike in the background after you sign in. When Safari integration is off, Arklike leaves Safari shortcuts alone and does not run Safari-scoped shortcut actions.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
