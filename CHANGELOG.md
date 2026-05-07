@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.3](https://github.com/CarterMcAlister/arklike/compare/v0.3.2...v0.3.3) (2026-05-06)
+
+
+### Bug Fixes
+
+* prioritize verbatim command palette search ([845c7e7](https://github.com/CarterMcAlister/arklike/commit/845c7e7eec38d28e7181b6827419fc51457f31a3))
+
 ## [0.3.2](https://github.com/CarterMcAlister/arklike/compare/v0.3.1...v0.3.2) (2026-05-06)
 
 
