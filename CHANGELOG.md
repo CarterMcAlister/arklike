@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.2](https://github.com/CarterMcAlister/arklike/compare/v0.3.1...v0.3.2) (2026-05-06)
+
+
+### Bug Fixes
+
+* limit command palette suggestions ([8ec707f](https://github.com/CarterMcAlister/arklike/commit/8ec707f05e45f284d4f8af7a3e0cd4ebda6af0bf))
+
 ## [0.3.1](https://github.com/CarterMcAlister/arklike/compare/v0.3.0...v0.3.1) (2026-05-06)
 
 
