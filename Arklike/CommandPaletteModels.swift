@@ -268,3 +268,11 @@ enum CommandPaletteRanking {
         }
     }
 }
+
+enum CommandPanelSuggestionLimits {
+    static let visible = 15
+    static let searchSuggestionReserve = 6
+    static let emptySourceCandidates = 12
+    static let querySourceCandidates = 60
+    static let fallbackFuzzyCandidates = 24
+}

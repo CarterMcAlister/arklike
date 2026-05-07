@@ -14,6 +14,8 @@ struct FrequentItemsCommandProvider: CommandPanelSuggestionProviding {
               state.mode == .search,
               state.activeScope == nil || state.activeScope == .all else { return [] }
         let records = CommandPanelUsageStore.shared.topRecords(limit: 10)
+        var bookmarkByID: [String: SafariBookmark]?
+        var tabByID: [String: SafariTabSnapshot]?
         return records.compactMap { record in
             if let recent = context.recentItems.first(where: { "recent-\($0.url.absoluteString)" == record.id }) {
                 return CommandPanelSuggestion(
@@ -29,7 +31,12 @@ struct FrequentItemsCommandProvider: CommandPanelSuggestionProviding {
                     lastUsedAt: record.lastUsedAt
                 )
             }
-            if let bookmark = context.bookmarks.first(where: { $0.id == record.id }) {
+            if record.kind == CommandPanelSuggestionKind.bookmark.rawValue {
+                if bookmarkByID == nil {
+                    bookmarkByID = Dictionary(context.bookmarks.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+                }
+            }
+            if let bookmark = bookmarkByID?[record.id] {
                 return CommandPanelSuggestion(
                     id: record.id,
                     title: bookmark.title,
@@ -43,7 +50,12 @@ struct FrequentItemsCommandProvider: CommandPanelSuggestionProviding {
                     lastUsedAt: record.lastUsedAt
                 )
             }
-            if let tab = context.safariTabs.first(where: { "safari-tab-\($0.windowId)-\($0.tabIndex)" == record.id }) {
+            if record.kind == CommandPanelSuggestionKind.safariTab.rawValue {
+                if tabByID == nil {
+                    tabByID = Dictionary(context.safariTabs.map { ("safari-tab-\($0.windowId)-\($0.tabIndex)", $0) }, uniquingKeysWith: { first, _ in first })
+                }
+            }
+            if let tab = tabByID?[record.id] {
                 let title = tab.title ?? tab.url?.absoluteString ?? "Untitled Safari Tab"
                 return CommandPanelSuggestion(
                     id: record.id,
@@ -116,14 +128,16 @@ struct SafariTabCommandProvider: CommandPanelSuggestionProviding {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let tabs: [SafariTabSnapshot]
         if trimmed.isEmpty {
-            tabs = Array(context.safariTabs.prefix(120))
+            tabs = Array(context.safariTabs.prefix(CommandPanelSuggestionLimits.emptySourceCandidates))
         } else {
-            let matches = context.safariTabs.filter { tab in
+            let matches = Array(context.safariTabs.lazy.filter { tab in
                 (tab.title ?? "").lowercased().contains(trimmed)
                     || (tab.url?.absoluteString ?? "").lowercased().contains(trimmed)
                     || (tab.windowTitle ?? "").lowercased().contains(trimmed)
-            }
-            tabs = Array((matches.isEmpty ? context.safariTabs : matches).prefix(200))
+            }.prefix(CommandPanelSuggestionLimits.querySourceCandidates))
+            tabs = matches.isEmpty
+                ? Array(context.safariTabs.prefix(CommandPanelSuggestionLimits.fallbackFuzzyCandidates))
+                : matches
         }
         return tabs.map { tab in
             let title = tab.title ?? tab.url?.absoluteString ?? "Untitled Safari Tab"
@@ -144,14 +158,16 @@ struct RecentURLCommandProvider: CommandPanelSuggestionProviding {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let recentItems: [CommandPanelRecentItem]
         if trimmed.isEmpty {
-            recentItems = Array(context.recentItems.prefix(80))
+            recentItems = Array(context.recentItems.prefix(CommandPanelSuggestionLimits.emptySourceCandidates))
         } else {
-            let matches = context.recentItems.filter { item in
+            let matches = Array(context.recentItems.lazy.filter { item in
                 (item.title ?? "").lowercased().contains(trimmed)
                     || item.url.absoluteString.lowercased().contains(trimmed)
                     || (item.safariProfileHint ?? "").lowercased().contains(trimmed)
-            }
-            recentItems = Array((matches.isEmpty ? context.recentItems : matches).prefix(200))
+            }.prefix(CommandPanelSuggestionLimits.querySourceCandidates))
+            recentItems = matches.isEmpty
+                ? Array(context.recentItems.prefix(CommandPanelSuggestionLimits.fallbackFuzzyCandidates))
+                : matches
         }
         return recentItems.map { item in
             let title = item.title?.isEmpty == false ? item.title! : item.url.absoluteString
@@ -216,14 +232,16 @@ struct SafariBookmarkProvider: CommandPanelSuggestionProviding {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let bookmarks: [SafariBookmark]
         if trimmed.isEmpty {
-            bookmarks = Array(context.bookmarks.prefix(80))
+            bookmarks = Array(context.bookmarks.prefix(CommandPanelSuggestionLimits.emptySourceCandidates))
         } else {
-            let matches = context.bookmarks.filter { bookmark in
+            let matches = Array(context.bookmarks.lazy.filter { bookmark in
                 bookmark.title.lowercased().contains(trimmed)
                     || bookmark.url.absoluteString.lowercased().contains(trimmed)
                     || (bookmark.path ?? "").lowercased().contains(trimmed)
-            }
-            bookmarks = Array((matches.isEmpty ? context.bookmarks : matches).prefix(250))
+            }.prefix(CommandPanelSuggestionLimits.querySourceCandidates))
+            bookmarks = matches.isEmpty
+                ? Array(context.bookmarks.prefix(CommandPanelSuggestionLimits.fallbackFuzzyCandidates))
+                : matches
         }
         return bookmarks.map { bookmark in
             let stale = SafariBookmarkStore.shared.isUsingStaleCache ? "Cached" : nil

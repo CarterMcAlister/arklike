@@ -30,7 +30,7 @@ final class CommandPanelSuggestionManager {
             }
             let deduped = deduplicated(all)
             let ranked = ranker.rank(deduped, query: query, activeScope: state.activeScope, usageStore: usageStore)
-            return Array(ranked.prefix(60))
+            return cappedSearchSuggestions(ranked, query: query, activeScope: state.activeScope)
         }
     }
 
@@ -147,6 +147,38 @@ final class CommandPanelSuggestionManager {
             result.append(suggestion)
         }
         return result
+    }
+
+    private func cappedSearchSuggestions(
+        _ ranked: [CommandPanelSuggestion],
+        query: String,
+        activeScope: CommandPanelSearchScope?
+    ) -> [CommandPanelSuggestion] {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return Array(ranked.prefix(CommandPanelSuggestionLimits.visible)) }
+        guard activeScope == nil || activeScope == .all else { return Array(ranked.prefix(CommandPanelSuggestionLimits.visible)) }
+        if case .url = URLParser().parse(trimmed) { return Array(ranked.prefix(CommandPanelSuggestionLimits.visible)) }
+
+        let reservedSearch = Array(ranked.filter(isSearchSuggestion).prefix(CommandPanelSuggestionLimits.searchSuggestionReserve))
+        guard !reservedSearch.isEmpty else { return Array(ranked.prefix(CommandPanelSuggestionLimits.visible)) }
+
+        var selected = reservedSearch
+        var selectedIDs = Set(reservedSearch.map(\.id))
+        for suggestion in ranked where !selectedIDs.contains(suggestion.id) {
+            guard selected.count < CommandPanelSuggestionLimits.visible else { break }
+            selected.append(suggestion)
+            selectedIDs.insert(suggestion.id)
+        }
+        return selected
+    }
+
+    private func isSearchSuggestion(_ suggestion: CommandPanelSuggestion) -> Bool {
+        switch suggestion.kind {
+        case .search, .webSuggestion, .searchHistory:
+            true
+        default:
+            false
+        }
     }
 
     private func primaryActionTitle(for source: CommandPanelSuggestion) -> String {
