@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/CarterMcAlister/arklike/compare/v0.4.0...v0.4.1) (2026-05-07)
+
+
+### Bug Fixes
+
+* move command palette work off main ([2918ed9](https://github.com/CarterMcAlister/arklike/commit/2918ed910dd56fee15354141fd87b097ffb5ef1f))
+
 ## [0.4.0](https://github.com/CarterMcAlister/arklike/compare/v0.3.3...v0.4.0) (2026-05-06)
 
 
