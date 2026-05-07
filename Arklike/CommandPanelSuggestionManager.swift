@@ -30,7 +30,7 @@ final class CommandPanelSuggestionManager {
             }
             let deduped = deduplicated(all)
             let ranked = ranker.rank(deduped, query: query, activeScope: state.activeScope, usageStore: usageStore)
-            return ranked
+            return Array(ranked.prefix(60))
         }
     }
 

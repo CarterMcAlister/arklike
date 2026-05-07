@@ -113,7 +113,19 @@ struct SafariTabCommandProvider: CommandPanelSuggestionProviding {
         if context.safariTabs.isEmpty, state.activeScope == .liveTabs {
             return [CommandPanelSuggestion(id: "safari-tabs-empty", title: "No Safari tabs found", subtitle: "Open tabs in Safari to switch to them here", kind: .permission, scope: .liveTabs, representedURL: nil, primaryAction: .noop("No tabs"), basePriority: 900)]
         }
-        return context.safariTabs.map { tab in
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let tabs: [SafariTabSnapshot]
+        if trimmed.isEmpty {
+            tabs = Array(context.safariTabs.prefix(120))
+        } else {
+            let matches = context.safariTabs.filter { tab in
+                (tab.title ?? "").lowercased().contains(trimmed)
+                    || (tab.url?.absoluteString ?? "").lowercased().contains(trimmed)
+                    || (tab.windowTitle ?? "").lowercased().contains(trimmed)
+            }
+            tabs = Array((matches.isEmpty ? context.safariTabs : matches).prefix(200))
+        }
+        return tabs.map { tab in
             let title = tab.title ?? tab.url?.absoluteString ?? "Untitled Safari Tab"
             let subtitle = [tab.url?.absoluteString, tab.isActive ? "Active" : nil, "Window \(tab.windowId)"].compactMap { $0 }.joined(separator: " • ")
             return CommandPanelSuggestion(id: "safari-tab-\(tab.windowId)-\(tab.tabIndex)", title: title, subtitle: subtitle.isEmpty ? "Safari tab" : subtitle, kind: .safariTab, scope: .liveTabs, representedURL: tab.url, primaryAction: .switchToSafariTab(windowId: tab.windowId, tabIndex: tab.tabIndex), alternateActions: tab.url.map(CommandPanelSuggestion.urlActions) ?? [], basePriority: CommandPaletteRanking.rank(for: .safariTab))
@@ -129,7 +141,19 @@ struct RecentURLCommandProvider: CommandPanelSuggestionProviding {
         if context.recentItems.isEmpty, state.activeScope == .recents {
             return [CommandPanelSuggestion(id: "recents-empty", title: "No recent items yet", subtitle: "Open URLs or searches from Arklike to see them here", kind: .permission, scope: .recents, representedURL: nil, primaryAction: .noop("No recents"), basePriority: 900)]
         }
-        return context.recentItems.map { item in
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let recentItems: [CommandPanelRecentItem]
+        if trimmed.isEmpty {
+            recentItems = Array(context.recentItems.prefix(80))
+        } else {
+            let matches = context.recentItems.filter { item in
+                (item.title ?? "").lowercased().contains(trimmed)
+                    || item.url.absoluteString.lowercased().contains(trimmed)
+                    || (item.safariProfileHint ?? "").lowercased().contains(trimmed)
+            }
+            recentItems = Array((matches.isEmpty ? context.recentItems : matches).prefix(200))
+        }
+        return recentItems.map { item in
             let title = item.title?.isEmpty == false ? item.title! : item.url.absoluteString
             return CommandPanelSuggestion(id: "recent-\(item.url.absoluteString)", title: title, subtitle: [item.url.absoluteString, "Recent", item.openCount > 1 ? "\(item.openCount)x" : nil].compactMap { $0 }.joined(separator: " • "), kind: .historyOrRecent, scope: .recents, representedURL: item.url, primaryAction: .openURL(item.url), alternateActions: [CommandPanelAlternateAction(id: "copy-url", title: "Copy URL", subtitle: item.url.absoluteString, iconSystemName: "doc.on.doc", action: .copyURL(item.url)), CommandPanelAlternateAction(id: "remove-recent", title: "Remove from suggestions", subtitle: "Remove this recent item", iconSystemName: "xmark.circle", action: .removeRecent(item.url))], basePriority: CommandPaletteRanking.rank(for: .historyOrRecent), lastUsedAt: item.lastAccessedAt)
         }
@@ -189,7 +213,19 @@ struct SafariBookmarkProvider: CommandPanelSuggestionProviding {
         if context.bookmarks.isEmpty, let error = context.bookmarkError, wantsBookmarks {
             return [CommandPanelSuggestion(id: "bookmarks-unavailable", title: "Safari bookmarks unavailable", subtitle: error, kind: .permission, scope: .bookmarks, representedURL: nil, primaryAction: .openSettings(.permissions), basePriority: CommandPaletteRanking.rank(for: .permission))]
         }
-        return context.bookmarks.map { bookmark in
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let bookmarks: [SafariBookmark]
+        if trimmed.isEmpty {
+            bookmarks = Array(context.bookmarks.prefix(80))
+        } else {
+            let matches = context.bookmarks.filter { bookmark in
+                bookmark.title.lowercased().contains(trimmed)
+                    || bookmark.url.absoluteString.lowercased().contains(trimmed)
+                    || (bookmark.path ?? "").lowercased().contains(trimmed)
+            }
+            bookmarks = Array((matches.isEmpty ? context.bookmarks : matches).prefix(250))
+        }
+        return bookmarks.map { bookmark in
             let stale = SafariBookmarkStore.shared.isUsingStaleCache ? "Cached" : nil
             return CommandPanelSuggestion(id: bookmark.id, title: bookmark.title, subtitle: [bookmark.url.absoluteString, bookmark.path, stale].compactMap { $0 }.joined(separator: " • "), kind: .bookmark, scope: .bookmarks, representedURL: bookmark.url, primaryAction: .openURL(bookmark.url), alternateActions: CommandPanelSuggestion.urlActions(bookmark.url), basePriority: CommandPaletteRanking.rank(for: .bookmark))
         }

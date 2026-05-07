@@ -346,6 +346,7 @@ struct CommandPanelSuggestionRanker {
         }
 
         let sequential = sequentialMatch(query: q, candidate: candidate)
+        guard q.count <= 32, c.count <= 80 else { return sequential }
         let distance = damerauLevenshtein(q, c)
         let typoScore = distance <= max(2, q.count / 3) ? 340 - Double(distance * 35) : 0
         if typoScore > sequential.score { return CommandPanelFuzzyMatch(score: typoScore, ranges: []) }
@@ -354,7 +355,9 @@ struct CommandPanelSuggestionRanker {
 
     private static func tokenMatch(_ token: String, candidate: String) -> Bool {
         candidate.split(whereSeparator: { !$0.isLetter && !$0.isNumber }).contains { part in
-            part.hasPrefix(token) || damerauLevenshtein(token, String(part)) <= 1
+            if part.hasPrefix(token) { return true }
+            guard token.count <= 16, part.count <= 32 else { return false }
+            return damerauLevenshtein(token, String(part)) <= 1
         }
     }
 

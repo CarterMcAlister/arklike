@@ -28,6 +28,7 @@ final class CommandPaletteController: ObservableObject {
     private var outsideClickMonitor: Any?
     private var dismissEventTap: CFMachPort?
     private var dismissEventTapSource: CFRunLoopSource?
+    private var refreshTask: Task<Void, Never>?
     private var storeCancellables: Set<AnyCancellable> = []
     private var emptyQuerySuggestionCache: [CommandPaletteItem] = []
     private var isEmptyQuerySuggestionCacheValid = false
@@ -55,14 +56,13 @@ final class CommandPaletteController: ObservableObject {
             SettingsCommandProvider()
         ])
         bindCachedStores()
-        refreshItems()
     }
 
     func show() {
+        refreshTask?.cancel()
         webSuggestions = []
-        clipboardURL = Self.clipboardURLForPanelOpen()
+        clipboardURL = nil
         state.resetForOpen()
-        refreshItems()
 
         let panel = panel ?? makePanel()
         self.panel = panel
@@ -80,9 +80,11 @@ final class CommandPaletteController: ObservableObject {
         installKeyMonitor()
         installOutsideClickMonitor()
         installDismissEventTap()
+        scheduleInitialRefresh()
     }
 
     func dismiss(returnFocusToSafari: Bool = true) {
+        refreshTask?.cancel()
         CommandPanelWebSuggestionService.shared.cancel()
         removeKeyMonitor()
         removeOutsideClickMonitor()
@@ -102,7 +104,7 @@ final class CommandPaletteController: ObservableObject {
         if state.mode == .search {
             scheduleWebSuggestions(for: state.query)
         }
-        refreshItems()
+        scheduleRefresh(delay: 0.035)
     }
 
     func moveSelection(delta: Int) {
@@ -239,17 +241,54 @@ final class CommandPaletteController: ObservableObject {
     }
 
     private func refreshItems() {
+        refreshTask?.cancel()
+        refreshTask = nil
         if shouldUseEmptyQuerySuggestionCache {
             state.setSuggestions(emptyQuerySuggestionsForCurrentClipboard())
             updateAutocomplete()
-            objectWillChange.send()
             return
         }
 
         let context = commandPanelContext(clipboardURL: clipboardURL, webSuggestions: webSuggestions)
         state.setSuggestions(suggestionManager.suggestions(state: state, context: context))
         updateAutocomplete()
-        objectWillChange.send()
+    }
+
+    private func scheduleRefresh(delay: TimeInterval = 0) {
+        refreshTask?.cancel()
+        refreshTask = Task { [weak self] in
+            if delay > 0 {
+                try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            } else {
+                await Task.yield()
+            }
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                guard let self, self.panel?.isVisible == true else { return }
+                self.refreshItems()
+            }
+        }
+    }
+
+    private func scheduleInitialRefresh() {
+        refreshTask?.cancel()
+        refreshTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 50_000_000)
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                guard let self, self.panel?.isVisible == true else { return }
+                if self.state.query.isEmpty {
+                    self.clipboardURL = Self.clipboardURLForPanelOpen()
+                }
+                self.refreshItems()
+            }
+        }
+    }
+
+    private func refreshVisibleItemsOrInvalidateCache() {
+        invalidateEmptyQuerySuggestionCache()
+        guard panel?.isVisible == true else { return }
+        scheduleRefresh(delay: 0)
     }
 
     private var shouldUseEmptyQuerySuggestionCache: Bool {
@@ -306,57 +345,52 @@ final class CommandPaletteController: ObservableObject {
     private func bindCachedStores() {
         liveTabStore.objectWillChange.sink { [weak self] _ in
             Task { @MainActor in
-                self?.invalidateEmptyQuerySuggestionCache()
-                self?.refreshItems()
+                self?.refreshVisibleItemsOrInvalidateCache()
             }
         }.store(in: &storeCancellables)
 
         bookmarkStore.objectWillChange.sink { [weak self] _ in
             Task { @MainActor in
-                self?.invalidateEmptyQuerySuggestionCache()
-                self?.refreshItems()
+                self?.refreshVisibleItemsOrInvalidateCache()
             }
         }.store(in: &storeCancellables)
 
         ProfileStore.shared.objectWillChange.sink { [weak self] _ in
             Task { @MainActor in
-                self?.invalidateEmptyQuerySuggestionCache()
-                self?.refreshItems()
+                self?.refreshVisibleItemsOrInvalidateCache()
             }
         }.store(in: &storeCancellables)
 
         recentStore.objectWillChange.sink { [weak self] _ in
             Task { @MainActor in
-                self?.invalidateEmptyQuerySuggestionCache()
-                self?.refreshItems()
+                self?.refreshVisibleItemsOrInvalidateCache()
             }
         }.store(in: &storeCancellables)
 
         TrafficRuleStore.shared.objectWillChange.sink { [weak self] _ in
             Task { @MainActor in
-                self?.invalidateEmptyQuerySuggestionCache()
-                self?.refreshItems()
+                self?.refreshVisibleItemsOrInvalidateCache()
             }
         }.store(in: &storeCancellables)
 
         AppSettings.shared.objectWillChange.sink { [weak self] _ in
             Task { @MainActor in
-                self?.invalidateEmptyQuerySuggestionCache()
-                self?.refreshItems()
+                self?.refreshVisibleItemsOrInvalidateCache()
             }
         }.store(in: &storeCancellables)
 
         FrontmostSafariMonitor.shared.$snapshot.sink { [weak self] snapshot in
             Task { @MainActor in
                 guard let self else { return }
+                self.invalidateEmptyQuerySuggestionCache()
+                guard self.panel?.isVisible == true else { return }
                 if self.panel?.isVisible == true,
                    !snapshot.isSafariFrontmost,
                    snapshot.frontmostBundleIdentifier != Bundle.main.bundleIdentifier {
                     self.dismiss(returnFocusToSafari: false)
                     return
                 }
-                self.invalidateEmptyQuerySuggestionCache()
-                self.refreshItems()
+                self.scheduleRefresh(delay: 0)
             }
         }.store(in: &storeCancellables)
     }
@@ -393,8 +427,9 @@ final class CommandPaletteController: ObservableObject {
     private func scheduleWebSuggestions(for query: String) {
         CommandPanelWebSuggestionService.shared.suggestions(for: query) { [weak self] suggestions in
             guard let self else { return }
+            guard self.webSuggestions != suggestions else { return }
             self.webSuggestions = suggestions
-            self.refreshItems()
+            self.scheduleRefresh(delay: 0)
         }
     }
 
@@ -520,8 +555,7 @@ final class CommandPaletteController: ObservableObject {
     private func installDismissEventTap() {
         guard dismissEventTap == nil else { return }
         let mask = CGEventMask(
-            (1 << CGEventType.keyDown.rawValue)
-            | (1 << CGEventType.leftMouseDown.rawValue)
+            (1 << CGEventType.leftMouseDown.rawValue)
             | (1 << CGEventType.rightMouseDown.rawValue)
             | (1 << CGEventType.otherMouseDown.rawValue)
         )
@@ -559,15 +593,6 @@ final class CommandPaletteController: ObservableObject {
 
         guard let panel, panel.isVisible else {
             removeDismissEventTap()
-            return Unmanaged.passUnretained(event)
-        }
-
-        if type == .keyDown {
-            let keyCode = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
-            if keyCode == 53 {
-                handleEscapeKey()
-                return nil
-            }
             return Unmanaged.passUnretained(event)
         }
 

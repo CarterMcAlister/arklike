@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct CommandPaletteView: View {
-    @ObservedObject var controller: CommandPaletteController
+    let controller: CommandPaletteController
     @ObservedObject private var state: CommandPanelState
     @FocusState private var inputFocused: Bool
 
