@@ -121,7 +121,6 @@ Required types:
 - `Profile`
 - `TrafficRule`
 - `TrafficMatcherType`
-- `TrafficOpenBehavior`
 
 Only mark pure value types as `Sendable`. Do not mark controllers, stores, or ObservableObjects as `Sendable`.
 

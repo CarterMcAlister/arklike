@@ -1,6 +1,5 @@
 import Foundation
 
-@MainActor
 final class SafariSidebarController {
     static let shared = SafariSidebarController()
 

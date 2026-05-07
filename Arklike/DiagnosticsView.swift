@@ -12,11 +12,12 @@ struct DiagnosticsView: View {
                     .font(.headline)
                 Spacer()
                 Button("Refresh") {
-                    permissions.refresh()
-                    safari.refresh(reason: "diagnostics refresh")
+                    permissions.refreshAsync()
+                    safari.scheduleRefresh(reason: "diagnostics refresh", delay: 0)
                 }
                 Button("Copy Diagnostics") { diagnostics.copyDiagnostics() }
             }
+            LabeledContent("Last slow operation", value: diagnostics.lastSlowOperation)
             Text(diagnostics.report())
                 .font(.system(.caption, design: .monospaced))
                 .textSelection(.enabled)

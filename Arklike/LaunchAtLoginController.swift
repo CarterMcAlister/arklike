@@ -7,13 +7,30 @@ final class LaunchAtLoginController: ObservableObject {
 
     @Published private(set) var isEnabled = false
     @Published private(set) var errorMessage: String?
+    @Published private(set) var isRefreshing = false
+    private var refreshTask: Task<Void, Never>?
 
     private init() {
-        refresh()
+        refreshAsync()
     }
 
     func refresh() {
-        isEnabled = SMAppService.mainApp.status == .enabled
+        refreshAsync()
+    }
+
+    func refreshAsync() {
+        refreshTask?.cancel()
+        isRefreshing = true
+        refreshTask = Task.detached(priority: .utility) {
+            let enabled = PerformanceTimer.measure("launch at login status") {
+                SMAppService.mainApp.status == .enabled
+            }
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                Self.shared.isEnabled = enabled
+                Self.shared.isRefreshing = false
+            }
+        }
     }
 
     func setEnabled(_ enabled: Bool) {
@@ -24,9 +41,9 @@ final class LaunchAtLoginController: ObservableObject {
             } else {
                 try SMAppService.mainApp.unregister()
             }
-            refresh()
+            refreshAsync()
         } catch {
-            refresh()
+            refreshAsync()
             errorMessage = error.localizedDescription
         }
     }

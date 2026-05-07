@@ -1,6 +1,5 @@
 import Foundation
 
-@MainActor
 final class CommandPanelWebSuggestionService {
     static let shared = CommandPanelWebSuggestionService()
 
@@ -9,25 +8,25 @@ final class CommandPanelWebSuggestionService {
 
     private init() {}
 
-    func suggestions(for query: String, completion: @escaping @MainActor ([String]) -> Void) {
+    func suggestions(for query: String, enabled: Bool, completion: @escaping @MainActor ([String]) -> Void) {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         task?.cancel()
-        guard AppSettings.shared.webSearchSuggestionsEnabled, trimmed.count >= 2, !looksLikeURL(trimmed) else {
-            completion([])
+        guard enabled, trimmed.count >= 2, !looksLikeURL(trimmed) else {
+            Task { @MainActor in completion([]) }
             return
         }
         if let cached = cache[trimmed.lowercased()] {
-            completion(cached)
+            Task { @MainActor in completion(cached) }
             return
         }
 
-        task = Task { [weak self] in
+        task = Task {
             try? await Task.sleep(nanoseconds: 220_000_000)
             guard !Task.isCancelled else { return }
             let suggestions = await Self.fetchGoogleSuggestions(for: trimmed)
             guard !Task.isCancelled else { return }
             await MainActor.run {
-                self?.cache[trimmed.lowercased()] = suggestions
+                Self.shared.cache[trimmed.lowercased()] = suggestions
                 completion(suggestions)
             }
         }
@@ -58,7 +57,9 @@ final class CommandPanelWebSuggestionService {
                   let suggestions = array[1] as? [String] else { return [] }
             return Array(NSOrderedSet(array: suggestions).compactMap { $0 as? String }.prefix(6))
         } catch {
-            Diagnostics.shared.log("Web search suggestions failed: \(error.localizedDescription)")
+            Task { @MainActor in
+                Diagnostics.shared.log("Web search suggestions failed: \(error.localizedDescription)")
+            }
             return []
         }
     }

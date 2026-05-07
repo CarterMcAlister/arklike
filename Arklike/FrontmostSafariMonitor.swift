@@ -73,7 +73,7 @@ struct FrontmostSafariSnapshot: Equatable, Sendable {
 final class FrontmostSafariMonitor: ObservableObject {
     static let shared = FrontmostSafariMonitor()
 
-    static let safariBundleIdentifier = "com.apple.Safari"
+    nonisolated static let safariBundleIdentifier = "com.apple.Safari"
 
     @Published private(set) var snapshot: FrontmostSafariSnapshot
 
@@ -83,6 +83,8 @@ final class FrontmostSafariMonitor: ObservableObject {
     private var settingsCancellable: AnyCancellable?
     private var axObserver: AXObserver?
     private var observedSafariPID: pid_t?
+    private var refreshScheduleTask: Task<Void, Never>?
+    private var activeWindowRefreshTask: Task<Void, Never>?
     private var windowIDResolutionTask: Task<Void, Never>?
     private var isStarted = false
 
@@ -102,17 +104,32 @@ final class FrontmostSafariMonitor: ObservableObject {
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor in
-                self?.refresh(reason: "workspace activation")
+                self?.scheduleRefresh(reason: "workspace activation", delay: 0)
             }
         }
 
         settingsCancellable = settings.objectWillChange.sink { [weak self] _ in
             Task { @MainActor in
-                self?.refresh(reason: "settings changed")
+                self?.scheduleRefresh(reason: "settings changed", delay: 0)
             }
         }
 
-        refresh(reason: "start")
+        scheduleRefresh(reason: "start", delay: 0)
+    }
+
+    func scheduleRefresh(reason: String = "manual", delay: TimeInterval = 0.05) {
+        refreshScheduleTask?.cancel()
+        refreshScheduleTask = Task { [weak self] in
+            if delay > 0 {
+                try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            } else {
+                await Task.yield()
+            }
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                self?.refresh(reason: reason)
+            }
+        }
     }
 
     func refresh(reason: String = "manual") {
@@ -124,16 +141,14 @@ final class FrontmostSafariMonitor: ObservableObject {
 
             if let safariPID {
                 configureAXObserverIfNeeded(for: safariPID)
-                let activeWindow = activeSafariWindowContext(pid: safariPID)
+                let activeWindow = snapshot.activeWindow?.processIdentifier == safariPID ? snapshot.activeWindow : nil
                 publish(
                     isSafariFrontmost: true,
                     frontmostBundleIdentifier: frontmostBundleIdentifier,
                     safariProcessIdentifier: safariPID,
                     activeWindow: activeWindow
                 )
-                if let activeWindow {
-                    scheduleWindowIDResolution(pid: safariPID, title: activeWindow.title)
-                }
+                scheduleActiveWindowRefresh(pid: safariPID, frontmostBundleIdentifier: frontmostBundleIdentifier)
             } else {
                 stopAXObserver()
                 publish(
@@ -232,74 +247,40 @@ final class FrontmostSafariMonitor: ObservableObject {
                 .commonModes
             )
         }
+        activeWindowRefreshTask?.cancel()
         windowIDResolutionTask?.cancel()
+        activeWindowRefreshTask = nil
         windowIDResolutionTask = nil
         axObserver = nil
         observedSafariPID = nil
     }
 
     fileprivate func handleAXNotification(_ notification: String) {
-        refresh(reason: "AX notification: \(notification)")
+        scheduleRefresh(reason: "AX notification: \(notification)", delay: 0.03)
     }
 
-    private func activeSafariWindowContext(pid: pid_t) -> SafariWindowContext? {
-        if var axContext = accessibilityFocusedWindowContext(pid: pid) {
-            if let previousWindow = snapshot.activeWindow,
-               previousWindow.processIdentifier == pid,
-               previousWindow.title == axContext.title,
-               axContext.safariWindowId == nil {
-                axContext = SafariWindowContext(
-                    processIdentifier: axContext.processIdentifier,
-                    safariWindowId: previousWindow.safariWindowId,
-                    accessibilityWindowNumber: axContext.accessibilityWindowNumber,
-                    title: axContext.title,
-                    profileHint: axContext.profileHint,
-                    center: axContext.center,
-                    source: axContext.source,
-                    observedAt: axContext.observedAt
-                )
+    private func scheduleActiveWindowRefresh(pid: pid_t, frontmostBundleIdentifier: String?) {
+        activeWindowRefreshTask?.cancel()
+        let previousWindow = snapshot.activeWindow
+        activeWindowRefreshTask = Task.detached(priority: .utility) { [previousWindow] in
+            let activeWindow = PerformanceTimer.measure("frontmost safari AX active window") {
+                SafariActiveWindowContextWorker.activeSafariWindowContext(pid: pid, previousWindow: previousWindow)
             }
-            return axContext
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                let monitor = Self.shared
+                guard monitor.snapshot.safariProcessIdentifier == pid else { return }
+                monitor.publish(
+                    isSafariFrontmost: true,
+                    frontmostBundleIdentifier: frontmostBundleIdentifier,
+                    safariProcessIdentifier: pid,
+                    activeWindow: activeWindow
+                )
+                if let activeWindow {
+                    monitor.scheduleWindowIDResolution(pid: pid, title: activeWindow.title)
+                }
+            }
         }
-
-        return SafariWindowContext(
-            processIdentifier: pid,
-            safariWindowId: nil,
-            accessibilityWindowNumber: nil,
-            title: nil,
-            profileHint: nil,
-            center: nil,
-            source: .unavailable,
-            observedAt: Date()
-        )
-    }
-
-    private func accessibilityFocusedWindowContext(pid: pid_t) -> SafariWindowContext? {
-        let appElement = AXUIElementCreateApplication(pid)
-        var focusedWindowValue: CFTypeRef?
-        let focusedStatus = AXUIElementCopyAttributeValue(
-            appElement,
-            kAXFocusedWindowAttribute as CFString,
-            &focusedWindowValue
-        )
-
-        guard focusedStatus == .success, let focusedWindowValue else { return nil }
-
-        let windowElement = focusedWindowValue as! AXUIElement
-        let title = stringAttribute(kAXTitleAttribute, from: windowElement)
-        let axWindowNumber = intAttribute("AXWindowNumber", from: windowElement)
-        let center = accessibilityWindowCenterInAppKitCoordinates(from: windowElement)
-
-        return SafariWindowContext(
-            processIdentifier: pid,
-            safariWindowId: nil,
-            accessibilityWindowNumber: axWindowNumber,
-            title: title,
-            profileHint: Self.profileHint(from: title),
-            center: center,
-            source: .accessibilityFocusedWindow,
-            observedAt: Date()
-        )
     }
 
     private func scheduleWindowIDResolution(pid: pid_t, title: String?) {
@@ -336,14 +317,77 @@ final class FrontmostSafariMonitor: ObservableObject {
         }
     }
 
-    private func stringAttribute(_ attribute: String, from element: AXUIElement) -> String? {
+}
+
+private enum SafariActiveWindowContextWorker {
+    static func activeSafariWindowContext(pid: pid_t, previousWindow: SafariWindowContext?) -> SafariWindowContext? {
+        if var axContext = accessibilityFocusedWindowContext(pid: pid) {
+            if let previousWindow,
+               previousWindow.processIdentifier == pid,
+               previousWindow.title == axContext.title,
+               axContext.safariWindowId == nil {
+                axContext = SafariWindowContext(
+                    processIdentifier: axContext.processIdentifier,
+                    safariWindowId: previousWindow.safariWindowId,
+                    accessibilityWindowNumber: axContext.accessibilityWindowNumber,
+                    title: axContext.title,
+                    profileHint: axContext.profileHint,
+                    center: axContext.center,
+                    source: axContext.source,
+                    observedAt: axContext.observedAt
+                )
+            }
+            return axContext
+        }
+
+        return SafariWindowContext(
+            processIdentifier: pid,
+            safariWindowId: nil,
+            accessibilityWindowNumber: nil,
+            title: nil,
+            profileHint: nil,
+            center: nil,
+            source: .unavailable,
+            observedAt: Date()
+        )
+    }
+
+    private static func accessibilityFocusedWindowContext(pid: pid_t) -> SafariWindowContext? {
+        let appElement = AXUIElementCreateApplication(pid)
+        var focusedWindowValue: CFTypeRef?
+        let focusedStatus = AXUIElementCopyAttributeValue(
+            appElement,
+            kAXFocusedWindowAttribute as CFString,
+            &focusedWindowValue
+        )
+
+        guard focusedStatus == .success, let focusedWindowValue else { return nil }
+
+        let windowElement = focusedWindowValue as! AXUIElement
+        let title = stringAttribute(kAXTitleAttribute, from: windowElement)
+        let axWindowNumber = intAttribute("AXWindowNumber", from: windowElement)
+        let center = accessibilityWindowCenterInAppKitCoordinates(from: windowElement)
+
+        return SafariWindowContext(
+            processIdentifier: pid,
+            safariWindowId: nil,
+            accessibilityWindowNumber: axWindowNumber,
+            title: title,
+            profileHint: profileHint(from: title),
+            center: center,
+            source: .accessibilityFocusedWindow,
+            observedAt: Date()
+        )
+    }
+
+    private static func stringAttribute(_ attribute: String, from element: AXUIElement) -> String? {
         var value: CFTypeRef?
         let status = AXUIElementCopyAttributeValue(element, attribute as CFString, &value)
         guard status == .success else { return nil }
         return value as? String
     }
 
-    private func intAttribute(_ attribute: String, from element: AXUIElement) -> Int? {
+    private static func intAttribute(_ attribute: String, from element: AXUIElement) -> Int? {
         var value: CFTypeRef?
         let status = AXUIElementCopyAttributeValue(element, attribute as CFString, &value)
         guard status == .success, let value else { return nil }
@@ -357,7 +401,7 @@ final class FrontmostSafariMonitor: ObservableObject {
         return nil
     }
 
-    private func accessibilityWindowCenterInAppKitCoordinates(from element: AXUIElement) -> CGPoint? {
+    private static func accessibilityWindowCenterInAppKitCoordinates(from element: AXUIElement) -> CGPoint? {
         var positionValue: CFTypeRef?
         var sizeValue: CFTypeRef?
         guard AXUIElementCopyAttributeValue(element, kAXPositionAttribute as CFString, &positionValue) == .success,
@@ -398,9 +442,6 @@ final class FrontmostSafariMonitor: ObservableObject {
 
     private static func profileHint(from title: String?) -> String? {
         guard let title, !title.isEmpty else { return nil }
-
-        // Safari does not expose a stable profile identifier. Keep only weak hints
-        // that later profile-routing code can compare against user-configured names.
         let bracketPatterns: [(Character, Character)] = [("[", "]"), ("(", ")")]
         for (open, close) in bracketPatterns {
             guard let start = title.firstIndex(of: open),
@@ -408,11 +449,8 @@ final class FrontmostSafariMonitor: ObservableObject {
                   start < end else { continue }
             let candidate = title[title.index(after: start)..<end]
                 .trimmingCharacters(in: .whitespacesAndNewlines)
-            if !candidate.isEmpty {
-                return candidate
-            }
+            if !candidate.isEmpty { return candidate }
         }
-
         return nil
     }
 }

@@ -8,41 +8,38 @@ final class SafariProfileManager {
 
     private init() {}
 
-    func switchToProfile(number: Int) -> Result<Void, SafariAutomationError> {
-        if ProfileStore.shared.profiles.isEmpty {
-            _ = ProfileStore.shared.refreshFromSafari()
-        }
+    func switchToProfileAsync(number: Int) async -> Result<Void, SafariAutomationError> {
         guard let profile = ProfileStore.shared.profile(number: number) else {
+            ProfileStore.shared.refreshFromSafariAsync()
             return .failure(.unsupportedState("No named Safari profile was discovered for Ctrl+\(number). Open Safari, then refresh Profiles in Arklike Settings."))
         }
-        return switchToProfile(profile)
+        return await switchToProfileAsync(profile)
     }
 
-    func switchToProfile(_ profile: Profile) -> Result<Void, SafariAutomationError> {
-        if switchToExistingWindow(for: profile) {
-            Diagnostics.shared.log("Switched to existing Safari profile window: \(profile.displayName)")
-            return .success(())
-        }
-        Diagnostics.shared.log("No existing Safari profile window found for \(profile.displayName); opening a new one")
-        return openNewWindow(profile: profile)
+    func switchToProfileAsync(_ profile: Profile) async -> Result<Void, SafariAutomationError> {
+        await Task.detached(priority: .userInitiated) {
+            if SafariProfileScriptRunner.switchToExistingWindow(for: profile) {
+                return .success(())
+            }
+            return SafariProfileScriptRunner.performNewProfileWindow(profile: profile)
+        }.value
     }
 
-    func openNewWindow(profile: Profile) -> Result<Void, SafariAutomationError> {
-        performNewProfileWindow(profile: profile)
-    }
-
-    func openURL(_ url: URL, in profile: Profile) -> Result<Void, SafariAutomationError> {
-        switch switchToProfile(profile) {
+    func openURLAsync(_ url: URL, in profile: Profile) async -> Result<Void, SafariAutomationError> {
+        switch await switchToProfileAsync(profile) {
         case .success:
-            return SafariAutomation.shared.openURLInNewTab(url, preferredWindowId: nil)
+            return await Task.detached(priority: .userInitiated) {
+                SafariAutomation.shared.openURLInNewTab(url, preferredWindowId: nil)
+            }.value
         case .failure(let error):
             return .failure(error)
         }
     }
+}
 
-    func discoverProfileNames() -> Result<[String], SafariAutomationError> {
+enum SafariProfileScriptRunner {
+    static func discoverProfileNames() -> Result<[String], SafariAutomationError> {
         let script = """
-        tell application "Safari" to activate
         tell application "System Events"
             if not (exists process "Safari") then return "ERROR:Safari not running"
             tell process "Safari"
@@ -73,12 +70,7 @@ final class SafariProfileManager {
         }
     }
 
-    // Backwards-compatible wrapper for older callers.
-    func discoverProfiles() -> Result<[String], SafariAutomationError> {
-        discoverProfileNames()
-    }
-
-    private func switchToExistingWindow(for profile: Profile) -> Bool {
+    static func switchToExistingWindow(for profile: Profile) -> Bool {
         guard let safari = NSRunningApplication.runningApplications(withBundleIdentifier: FrontmostSafariMonitor.safariBundleIdentifier).first else {
             return false
         }
@@ -87,9 +79,10 @@ final class SafariProfileManager {
         guard AXUIElementCopyAttributeValue(appElement, kAXWindowsAttribute as CFString, &windowsValue) == .success,
               let windows = windowsValue as? [AXUIElement] else { return false }
 
+        let deadline = Date().addingTimeInterval(1.5)
         let needle = profile.effectiveMenuName.lowercased()
-        for window in windows {
-            let haystack = accessibilityStrings(from: window, maxDepth: 5).joined(separator: "\n").lowercased()
+        for window in windows where Date() < deadline {
+            let haystack = accessibilityStrings(from: window, maxDepth: 3, deadline: deadline).joined(separator: "\n").lowercased()
             if haystack.contains(needle) {
                 safari.activate(options: [.activateAllWindows])
                 AXUIElementPerformAction(window, kAXRaiseAction as CFString)
@@ -99,33 +92,8 @@ final class SafariProfileManager {
         return false
     }
 
-    private func accessibilityStrings(from element: AXUIElement, maxDepth: Int) -> [String] {
-        guard maxDepth >= 0 else { return [] }
-        var result: [String] = []
-        for attribute in [kAXTitleAttribute, kAXDescriptionAttribute, kAXValueAttribute, kAXHelpAttribute] {
-            var value: CFTypeRef?
-            if AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success {
-                if let string = value as? String, !string.isEmpty {
-                    result.append(string)
-                } else if let attributed = value as? NSAttributedString, !attributed.string.isEmpty {
-                    result.append(attributed.string)
-                }
-            }
-        }
-
-        guard maxDepth > 0 else { return result }
-        var childrenValue: CFTypeRef?
-        if AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &childrenValue) == .success,
-           let children = childrenValue as? [AXUIElement] {
-            for child in children.prefix(80) {
-                result.append(contentsOf: accessibilityStrings(from: child, maxDepth: maxDepth - 1))
-            }
-        }
-        return result
-    }
-
-    private func performNewProfileWindow(profile: Profile) -> Result<Void, SafariAutomationError> {
-        let title = Self.escapeAppleScript("New \(profile.effectiveMenuName) Window")
+    static func performNewProfileWindow(profile: Profile) -> Result<Void, SafariAutomationError> {
+        let title = escapeAppleScript("New \(profile.effectiveMenuName) Window")
         let script = """
         tell application "Safari" to activate
         tell application "System Events"
@@ -152,7 +120,32 @@ final class SafariProfileManager {
         }
     }
 
-    private func run(_ source: String) -> Result<String, SafariAutomationError> {
+    private static func accessibilityStrings(from element: AXUIElement, maxDepth: Int, deadline: Date) -> [String] {
+        guard maxDepth >= 0, Date() < deadline else { return [] }
+        var result: [String] = []
+        for attribute in [kAXTitleAttribute, kAXDescriptionAttribute, kAXValueAttribute, kAXHelpAttribute] where Date() < deadline {
+            var value: CFTypeRef?
+            if AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success {
+                if let string = value as? String, !string.isEmpty {
+                    result.append(string)
+                } else if let attributed = value as? NSAttributedString, !attributed.string.isEmpty {
+                    result.append(attributed.string)
+                }
+            }
+        }
+
+        guard maxDepth > 0, Date() < deadline else { return result }
+        var childrenValue: CFTypeRef?
+        if AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &childrenValue) == .success,
+           let children = childrenValue as? [AXUIElement] {
+            for child in children.prefix(40) where Date() < deadline {
+                result.append(contentsOf: accessibilityStrings(from: child, maxDepth: maxDepth - 1, deadline: deadline))
+            }
+        }
+        return result
+    }
+
+    private static func run(_ source: String) -> Result<String, SafariAutomationError> {
         var errorInfo: NSDictionary?
         guard let script = NSAppleScript(source: source) else { return .failure(.appleScriptFailed("Could not compile profile script.")) }
         let descriptor = script.executeAndReturnError(&errorInfo)

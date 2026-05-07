@@ -16,6 +16,7 @@
 		A00000000000000000000122 /* CommandPanelSuggestionInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000126 /* CommandPanelSuggestionInput.swift */; };
 		A00000000000000000000123 /* CommandPanelSuggestionComputer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000127 /* CommandPanelSuggestionComputer.swift */; };
 		A00000000000000000000124 /* PerformanceTimer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000128 /* PerformanceTimer.swift */; };
+		A00000000000000000000130 /* MainThreadStallDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000131 /* MainThreadStallDetector.swift */; };
 		A00000000000000000000125 /* SafariWindowIDResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000129 /* SafariWindowIDResolver.swift */; };
 		A00000000000000000000016 /* FrontmostSafariMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000009 /* FrontmostSafariMonitor.swift */; };
 		A00000000000000000000017 /* KeyboardShortcut.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000000A /* KeyboardShortcut.swift */; };
@@ -44,6 +45,7 @@
 		A0000000000000000000A2 /* TrafficRuleMatcherTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000B2 /* TrafficRuleMatcherTests.swift */; };
 		A000000000000000000117 /* CommandPanelSuggestionRankerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000000000118 /* CommandPanelSuggestionRankerTests.swift */; };
 		A0000000000000000000012A /* CommandPanelSuggestionComputerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000012B /* CommandPanelSuggestionComputerTests.swift */; };
+		A00000000000000000000132 /* CommandPanelPerformanceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000133 /* CommandPanelPerformanceTests.swift */; };
 		A0000000000000000000C4 /* SettingsWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000C3 /* SettingsWindowController.swift */; };
 		A0000000000000000000D2 /* MenuBarIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000D1 /* MenuBarIcon.swift */; };
 		A0000000000000000000E2 /* ToastHUD.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000E1 /* ToastHUD.swift */; };
@@ -68,6 +70,7 @@
 		A00000000000000000000126 /* CommandPanelSuggestionInput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandPanelSuggestionInput.swift; sourceTree = "<group>"; };
 		A00000000000000000000127 /* CommandPanelSuggestionComputer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandPanelSuggestionComputer.swift; sourceTree = "<group>"; };
 		A00000000000000000000128 /* PerformanceTimer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerformanceTimer.swift; sourceTree = "<group>"; };
+		A00000000000000000000131 /* MainThreadStallDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainThreadStallDetector.swift; sourceTree = "<group>"; };
 		A00000000000000000000129 /* SafariWindowIDResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SafariWindowIDResolver.swift; sourceTree = "<group>"; };
 		A00000000000000000000009 /* FrontmostSafariMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrontmostSafariMonitor.swift; sourceTree = "<group>"; };
 		A0000000000000000000000A /* KeyboardShortcut.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardShortcut.swift; sourceTree = "<group>"; };
@@ -97,6 +100,7 @@
 		A0000000000000000000B2 /* TrafficRuleMatcherTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrafficRuleMatcherTests.swift; sourceTree = "<group>"; };
 		A000000000000000000118 /* CommandPanelSuggestionRankerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandPanelSuggestionRankerTests.swift; sourceTree = "<group>"; };
 		A0000000000000000000012B /* CommandPanelSuggestionComputerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandPanelSuggestionComputerTests.swift; sourceTree = "<group>"; };
+		A00000000000000000000133 /* CommandPanelPerformanceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandPanelPerformanceTests.swift; sourceTree = "<group>"; };
 		A0000000000000000000B3 /* ArklikeTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ArklikeTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A0000000000000000000C3 /* SettingsWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsWindowController.swift; sourceTree = "<group>"; };
 		A0000000000000000000D1 /* MenuBarIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarIcon.swift; sourceTree = "<group>"; };
@@ -172,6 +176,7 @@
 				A000000000000000000102 /* CommandPanelStores.swift */,
 				A000000000000000000103 /* CommandPanelSuggestionRanker.swift */,
 				A00000000000000000000128 /* PerformanceTimer.swift */,
+				A00000000000000000000131 /* MainThreadStallDetector.swift */,
 				A000000000000000000104 /* CommandPanelWebSuggestionService.swift */,
 				A000000000000000000105 /* CommandPanelSuggestionManager.swift */,
 				A000000000000000000106 /* SafariLiveTabStore.swift */,
@@ -215,6 +220,7 @@
 				A0000000000000000000B2 /* TrafficRuleMatcherTests.swift */,
 				A000000000000000000118 /* CommandPanelSuggestionRankerTests.swift */,
 				A0000000000000000000012B /* CommandPanelSuggestionComputerTests.swift */,
+				A00000000000000000000133 /* CommandPanelPerformanceTests.swift */,
 			);
 			path = ArklikeTests;
 			sourceTree = "<group>";
@@ -332,6 +338,7 @@
 				A000000000000000000112 /* CommandPanelStores.swift in Sources */,
 				A000000000000000000113 /* CommandPanelSuggestionRanker.swift in Sources */,
 				A00000000000000000000124 /* PerformanceTimer.swift in Sources */,
+				A00000000000000000000130 /* MainThreadStallDetector.swift in Sources */,
 				A000000000000000000114 /* CommandPanelWebSuggestionService.swift in Sources */,
 				A000000000000000000115 /* CommandPanelSuggestionManager.swift in Sources */,
 				A000000000000000000116 /* SafariLiveTabStore.swift in Sources */,
@@ -363,6 +370,7 @@
 				A0000000000000000000A2 /* TrafficRuleMatcherTests.swift in Sources */,
 				A000000000000000000117 /* CommandPanelSuggestionRankerTests.swift in Sources */,
 				A0000000000000000000012A /* CommandPanelSuggestionComputerTests.swift in Sources */,
+				A00000000000000000000132 /* CommandPanelPerformanceTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -76,10 +76,10 @@ struct SettingsView: View {
 #if DEBUG
             guard !PreviewFixtures.isRunningForPreviews else { return }
 #endif
-            permissions.refresh()
-            launchAtLogin.refresh()
+            permissions.refreshAsync()
+            launchAtLogin.refreshAsync()
             safariMonitor.start()
-            safariMonitor.refresh(reason: "settings appear")
+            safariMonitor.scheduleRefresh(reason: "settings appear")
         }
         .onReceive(NotificationCenter.default.publisher(for: .arklikeSettingsDestinationRequested)) { notification in
             guard let destination = notification.object as? SettingsDestination else { return }
@@ -143,7 +143,7 @@ struct SettingsView: View {
 
             HStack {
                 Button("Refresh Permission Status") {
-                    permissions.refresh()
+                    permissions.refreshAsync()
                     bookmarkStore.refreshIfNeeded(force: false)
                 }
                 Spacer()
@@ -475,7 +475,7 @@ enum PreviewFixtures {
             CommandPanelSuggestion(
                 id: "preview-rule-work",
                 title: "Work Links",
-                subtitle: "Enabled • domain: github.com • Profile 2 • reuseProfileWindow",
+                subtitle: "Enabled • domain: github.com • Work",
                 kind: .trafficRule,
                 scope: .settings,
                 representedURL: nil,

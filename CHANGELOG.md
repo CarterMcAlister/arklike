@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.3](https://github.com/CarterMcAlister/arklike/compare/v0.4.2...v0.4.3) (2026-05-07)
+
+
+### Bug Fixes
+
+* prevent Settings and command palette freezes
+* move Safari automation, profile discovery, pasteboard, and diagnostics work off UI hot paths
+
 ## [0.4.2](https://github.com/CarterMcAlister/arklike/compare/v0.4.1...v0.4.2) (2026-05-07)
 
 

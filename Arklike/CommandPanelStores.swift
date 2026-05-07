@@ -250,6 +250,7 @@ final class SafariBookmarkStore: ObservableObject {
     private var cachedModificationDate: Date?
     private var periodicRefreshTask: Task<Void, Never>?
     private var deferredRefreshTask: Task<Void, Never>?
+    private var metadataRefreshTask: Task<Void, Never>?
     private var reloadTask: Task<Void, Never>?
 
     private var bookmarkURL: URL {
@@ -284,9 +285,11 @@ final class SafariBookmarkStore: ObservableObject {
     func stopPeriodicRefresh() {
         periodicRefreshTask?.cancel()
         deferredRefreshTask?.cancel()
+        metadataRefreshTask?.cancel()
         reloadTask?.cancel()
         periodicRefreshTask = nil
         deferredRefreshTask = nil
+        metadataRefreshTask = nil
         reloadTask = nil
     }
 
@@ -303,9 +306,21 @@ final class SafariBookmarkStore: ObservableObject {
     }
 
     func refreshIfNeeded(force: Bool = false) {
-        let currentModificationDate = modificationDate()
-        guard force || bookmarks.isEmpty || currentModificationDate != cachedModificationDate else { return }
-        reload(force: force)
+        metadataRefreshTask?.cancel()
+        let bookmarkURL = bookmarkURL
+        let cachedModificationDate = cachedModificationDate
+        let hasBookmarks = !bookmarks.isEmpty
+        metadataRefreshTask = Task.detached(priority: .utility) {
+            let currentModificationDate = PerformanceTimer.measure("safari bookmark metadata check") {
+                SafariBookmarkLoader.modificationDate(for: bookmarkURL)
+            }
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                let store = Self.shared
+                guard force || !hasBookmarks || currentModificationDate != cachedModificationDate else { return }
+                store.reload(force: force)
+            }
+        }
     }
 
     func reload(force: Bool = true) {
@@ -357,7 +372,7 @@ final class SafariBookmarkStore: ObservableObject {
     }
 
     private func modificationDate() -> Date? {
-        (try? FileManager.default.attributesOfItem(atPath: bookmarkURL.path)[.modificationDate]) as? Date
+        SafariBookmarkLoader.modificationDate(for: bookmarkURL)
     }
 
     static func parseBookmarkNode(_ node: [String: Any], path: [String]) -> [SafariBookmark] {
@@ -406,9 +421,13 @@ private enum SafariBookmarkLoadResult {
 }
 
 private enum SafariBookmarkLoader {
+    static func modificationDate(for bookmarkURL: URL) -> Date? {
+        (try? FileManager.default.attributesOfItem(atPath: bookmarkURL.path)[.modificationDate]) as? Date
+    }
+
     static func load(from bookmarkURL: URL) -> SafariBookmarkLoadResult {
         do {
-            let modificationDate = (try? FileManager.default.attributesOfItem(atPath: bookmarkURL.path)[.modificationDate]) as? Date
+            let modificationDate = modificationDate(for: bookmarkURL)
             let data = try Data(contentsOf: bookmarkURL)
             let object = try PropertyListSerialization.propertyList(from: data, options: [], format: nil)
             guard let root = object as? [String: Any] else {
@@ -485,9 +504,11 @@ extension SafariBookmarkStore {
     func applyPreviewBookmarks(_ bookmarks: [SafariBookmark], error: String? = nil, isStale: Bool = false) {
         reloadTask?.cancel()
         deferredRefreshTask?.cancel()
+        metadataRefreshTask?.cancel()
         periodicRefreshTask?.cancel()
         reloadTask = nil
         deferredRefreshTask = nil
+        metadataRefreshTask = nil
         periodicRefreshTask = nil
         self.bookmarks = bookmarks
         lastError = error

@@ -9,7 +9,8 @@ struct ProfilesSettingsView: View {
                 Text("Safari Profiles")
                     .font(.headline)
                 Spacer()
-                Button("Refresh from Safari") { _ = store.refreshFromSafari() }
+                Button(store.isRefreshing ? "Refreshing…" : "Refresh from Safari") { store.refreshFromSafariAsync() }
+                    .disabled(store.isRefreshing)
             }
             Text("Arklike detects named Safari profile menu items automatically. Safari’s default profile is intentionally not mapped. Ctrl+1 maps to the first named profile Safari exposes, Ctrl+2 to the next, and so on. If a matching profile window is already open, Arklike switches to it instead of opening a duplicate.")
                 .font(.callout)
@@ -17,6 +18,10 @@ struct ProfilesSettingsView: View {
             Text(store.lastDiscoveryMessage)
                 .font(.callout)
                 .foregroundStyle(.secondary)
+
+            if store.isRefreshing {
+                ProgressView("Refreshing profiles from Safari…")
+            }
 
             if store.profiles.isEmpty {
                 Text("No named Safari profiles detected. Create profiles in Safari Settings, then click Refresh from Safari.")
@@ -49,7 +54,7 @@ struct ProfilesSettingsView: View {
             guard !PreviewFixtures.isRunningForPreviews else { return }
 #endif
             if store.profiles.isEmpty {
-                _ = store.refreshFromSafari()
+                store.refreshFromSafariAsync()
             }
         }
     }

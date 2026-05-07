@@ -97,11 +97,11 @@ final class ShortcutManager: ObservableObject {
 
     fileprivate func handleCarbonHotKey(id: UInt32) -> OSStatus {
         guard let action = actionsByHotKeyID[id] else { return noErr }
-        guard isActionEnabled(action) else {
+        guard isActionEnabled(action, scheduleRefreshOnMismatch: true) else {
             reconcileRegisteredHotKeys()
             return noErr
         }
-        handler?(action)
+        enqueue(action)
         return noErr
     }
 
@@ -111,11 +111,17 @@ final class ShortcutManager: ObservableObject {
             if let eventTap { CGEvent.tapEnable(tap: eventTap, enable: true) }
             return Unmanaged.passUnretained(event)
         }
-        guard let action = actionMatching(event: event), isActionEnabled(action) else {
+        guard let action = actionMatching(event: event), isActionEnabled(action, scheduleRefreshOnMismatch: true) else {
             return Unmanaged.passUnretained(event)
         }
-        handler?(action)
+        enqueue(action)
         return nil
+    }
+
+    private func enqueue(_ action: ShortcutAction) {
+        Task { @MainActor [weak self] in
+            self?.handler?(action)
+        }
     }
 
     private func actionMatching(event: CGEvent) -> ShortcutAction? {
@@ -126,9 +132,15 @@ final class ShortcutManager: ObservableObject {
         }
     }
 
-    private func isActionEnabled(_ action: ShortcutAction) -> Bool {
+    private func isActionEnabled(_ action: ShortcutAction, scheduleRefreshOnMismatch: Bool = false) -> Bool {
         let snapshot = FrontmostSafariMonitor.shared.snapshot
         guard snapshot.canOverrideSafariShortcuts else { return false }
+        guard Self.isSafariCurrentlyFrontmost() else {
+            if scheduleRefreshOnMismatch {
+                FrontmostSafariMonitor.shared.scheduleRefresh(reason: "shortcut rejected outside Safari", delay: 0)
+            }
+            return false
+        }
         switch action {
         case .commandPalette: return snapshot.commandPaletteShortcutEnabled
         case .copyCurrentURL: return snapshot.copyURLShortcutEnabled
@@ -136,6 +148,10 @@ final class ShortcutManager: ObservableObject {
         case .profile1, .profile2, .profile3, .profile4, .profile5, .profile6, .profile7, .profile8, .profile9:
             return snapshot.profileShortcutsEnabled
         }
+    }
+
+    private static func isSafariCurrentlyFrontmost() -> Bool {
+        NSWorkspace.shared.frontmostApplication?.bundleIdentifier == FrontmostSafariMonitor.safariBundleIdentifier
     }
 
     private func installEventTapIfNeeded() {
@@ -175,7 +191,7 @@ final class ShortcutManager: ObservableObject {
             unregisterAllHotKeys()
             return
         }
-        let desiredActions = Set(ShortcutAction.allCases.filter(isActionEnabled))
+        let desiredActions = Set(ShortcutAction.allCases.filter { isActionEnabled($0, scheduleRefreshOnMismatch: false) })
         if desiredActions == registeredActions { return }
         unregisterAllHotKeys()
         for action in ShortcutAction.allCases where desiredActions.contains(action) {

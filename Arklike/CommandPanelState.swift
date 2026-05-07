@@ -30,12 +30,12 @@ final class CommandPanelState: ObservableObject {
         }
     }
 
-    func resetForOpen() {
+    func resetForOpen(initialSuggestions: [CommandPanelSuggestion] = []) {
         query = ""
         scopePickerQuery = ""
         activeScope = nil
         mode = .search
-        suggestions = []
+        suggestions = initialSuggestions
         selectedIndex = 0
         autocompleteText = ""
         autocompleteAccepted = false

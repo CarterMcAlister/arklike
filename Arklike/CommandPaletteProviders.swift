@@ -298,22 +298,24 @@ struct TrafficRuleCommandProvider: CommandPanelSuggestionProviding {
         var results: [CommandPanelSuggestion] = []
         if case .url(let url) = URLParser().parse(trimmed), let match = TrafficRuleMatcher().firstMatch(for: url, rules: rules) {
             let rule = match.rule
-            results.append(ruleSuggestion(rule, titlePrefix: "Matching rule: ", representedURL: url, basePriority: 1))
+            results.append(ruleSuggestion(rule, profiles: input.profiles, titlePrefix: "Matching rule: ", representedURL: url, basePriority: 1))
         }
         if rules.isEmpty, trimmed.localizedCaseInsensitiveContains("traffic") || trimmed.localizedCaseInsensitiveContains("rule") || trimmed.localizedCaseInsensitiveContains("route") {
             return [CommandPanelSuggestion(id: "traffic-empty", title: "No Traffic Control rules", subtitle: "Open Traffic Control settings to add routing rules", kind: .permission, scope: .all, representedURL: nil, primaryAction: .openSettings(.trafficControl), basePriority: CommandPaletteRanking.rank(for: .permission))]
         }
         results.append(contentsOf: rules.compactMap { rule in
-            let text = [rule.name, rule.pattern, "profile \(rule.targetProfileNumber)", rule.matcherType.rawValue, "traffic", "rule", "route"].joined(separator: " ")
+            let profileName = input.profiles.first { $0.assignedNumber == rule.targetProfileNumber }?.displayName
+            let text = [rule.name, rule.pattern, profileName, "profile \(rule.targetProfileNumber)", rule.matcherType.rawValue, "traffic", "rule", "route"].compactMap { $0 }.joined(separator: " ")
             guard trimmed.isEmpty || text.localizedCaseInsensitiveContains(trimmed) || CommandPanelSuggestionRanker.fuzzyScore(query: trimmed, candidate: text) > 0 else { return nil }
-            return ruleSuggestion(rule)
+            return ruleSuggestion(rule, profiles: input.profiles)
         })
         return results
     }
 
-    private func ruleSuggestion(_ rule: TrafficRule, titlePrefix: String = "", representedURL: URL? = nil, basePriority: Int? = nil) -> CommandPanelSuggestion {
+    private func ruleSuggestion(_ rule: TrafficRule, profiles: [Profile], titlePrefix: String = "", representedURL: URL? = nil, basePriority: Int? = nil) -> CommandPanelSuggestion {
         let enabled = rule.enabled ? "Enabled" : "Disabled"
-        let subtitle = "\(enabled) • \(rule.matcherType.rawValue): \(rule.pattern) • Profile \(rule.targetProfileNumber) • \(rule.openBehavior.rawValue)"
+        let profileName = profiles.first { $0.assignedNumber == rule.targetProfileNumber }?.displayName ?? "Profile \(rule.targetProfileNumber)"
+        let subtitle = "\(enabled) • \(rule.matcherType.rawValue): \(rule.pattern) • \(profileName)"
         return CommandPanelSuggestion(id: "traffic-rule-\(rule.id.uuidString)-\(titlePrefix.isEmpty ? "row" : "match")", title: "\(titlePrefix)\(rule.name)", subtitle: subtitle, kind: .trafficRule, scope: .all, representedURL: representedURL, primaryAction: .openSettings(.trafficControl), alternateActions: [CommandPanelAlternateAction(id: "copy-pattern", title: "Copy Rule Pattern", subtitle: rule.pattern, iconSystemName: "doc.on.doc", action: .copyText(rule.pattern)), CommandPanelAlternateAction(id: "traffic-settings", title: "Open Traffic Control Settings", subtitle: "Edit routing rules", iconSystemName: "gearshape", action: .openSettings(.trafficControl))], basePriority: basePriority ?? CommandPaletteRanking.rank(for: .trafficRule))
     }
 }

@@ -7,6 +7,38 @@ private final class CommandPalettePanel: NSPanel {
     override var canBecomeKey: Bool { true }
 }
 
+private struct CommandPanelDataSnapshot: Sendable {
+    var recentItems: [CommandPanelRecentItem]
+    var safariTabs: [SafariTabSnapshot]
+    var safariTabError: SafariAutomationError?
+    var bookmarks: [SafariBookmark]
+    var bookmarkError: String?
+    var isUsingStaleBookmarkCache: Bool
+    var profiles: [Profile]
+    var trafficRules: [TrafficRule]
+    var usageRecords: [String: CommandPanelUsageRecord]
+    var searchHistoryQueries: [String]
+    var webSearchSuggestionsEnabled: Bool
+    var switchToExistingSafariTabInsteadOfOpeningDuplicate: Bool
+    var searchShortcuts: [SearchShortcut]
+
+    static let empty = CommandPanelDataSnapshot(
+        recentItems: [],
+        safariTabs: [],
+        safariTabError: nil,
+        bookmarks: [],
+        bookmarkError: nil,
+        isUsingStaleBookmarkCache: false,
+        profiles: [],
+        trafficRules: [],
+        usageRecords: [:],
+        searchHistoryQueries: [],
+        webSearchSuggestionsEnabled: false,
+        switchToExistingSafariTabInsteadOfOpeningDuplicate: true,
+        searchShortcuts: SearchShortcut.defaults
+    )
+}
+
 @MainActor
 final class CommandPaletteController: ObservableObject {
     static let shared = CommandPaletteController()
@@ -31,10 +63,12 @@ final class CommandPaletteController: ObservableObject {
     private var refreshScheduleTask: Task<Void, Never>?
     private var suggestionTask: Task<Void, Never>?
     private var clipboardTask: Task<Void, Never>?
+    private var postShowSetupTask: Task<Void, Never>?
     private var suggestionGeneration = 0
     private var storeCancellables: Set<AnyCancellable> = []
     private var clipboardURL: URL?
     private var webSuggestions: [String] = []
+    private var dataSnapshot = CommandPanelDataSnapshot.empty
 
     private let recentStore = CommandPanelRecentStore.shared
     private let liveTabStore = SafariLiveTabStore.shared
@@ -54,6 +88,7 @@ final class CommandPaletteController: ObservableObject {
     )
 
     private init() {
+        rebuildSuggestionDataSnapshot()
         bindCachedStores()
     }
 
@@ -66,8 +101,7 @@ final class CommandPaletteController: ObservableObject {
 
             webSuggestions = []
             clipboardURL = nil
-            state.resetForOpen()
-            state.setSuggestions([Self.loadingPlaceholderSuggestion])
+            state.resetForOpen(initialSuggestions: [Self.loadingPlaceholderSuggestion])
 
             let panel = panel ?? makePanel()
             self.panel = panel
@@ -83,8 +117,7 @@ final class CommandPaletteController: ObservableObject {
             state.requestInputFocus()
 
             installKeyMonitor()
-            installOutsideClickMonitor()
-            installDismissEventTap()
+            schedulePostShowSetup()
             scheduleRefresh(delay: 0.05)
             scheduleDeferredClipboardRead()
         }
@@ -94,6 +127,7 @@ final class CommandPaletteController: ObservableObject {
         refreshScheduleTask?.cancel()
         suggestionTask?.cancel()
         clipboardTask?.cancel()
+        postShowSetupTask?.cancel()
         CommandPanelWebSuggestionService.shared.cancel()
         removeKeyMonitor()
         removeOutsideClickMonitor()
@@ -131,6 +165,7 @@ final class CommandPaletteController: ObservableObject {
 
     func perform(_ item: CommandPaletteItem) {
         suggestionManager.recordSelection(item, query: state.query)
+        rebuildSuggestionDataSnapshot()
         switch item.action {
         case .openURL(let url):
             openURL(url, title: item.title)
@@ -138,22 +173,28 @@ final class CommandPaletteController: ObservableObject {
             let searchText = state.autocompleteAccepted && !state.query.isEmpty ? state.query : query
             searchWeb(searchText)
         case .switchToSafariTab(let windowId, let tabIndex):
-            if let windowId, let tabIndex {
-                _ = SafariAutomation.shared.activateTab(windowId: windowId, tabIndex: tabIndex)
-            } else if let windowId {
-                _ = SafariAutomation.shared.activateWindow(windowId: windowId)
-            }
             if let url = item.representedURL { remember(url, title: item.title) }
-            liveTabStore.scheduleRefresh(after: 0.5)
             dismiss(returnFocusToSafari: false)
-        case .openProfile(let number):
-            switch SafariProfileManager.shared.switchToProfile(number: number) {
-            case .success:
-                NotificationHUD.show(title: "Safari Profile", message: "Opened profile \(number).")
-            case .failure(let error):
-                NotificationHUD.show(title: "Could not open profile \(number)", message: error.localizedDescription)
+            Task.detached(priority: .userInitiated) {
+                if let windowId, let tabIndex {
+                    _ = SafariAutomation.shared.activateTab(windowId: windowId, tabIndex: tabIndex)
+                } else if let windowId {
+                    _ = SafariAutomation.shared.activateWindow(windowId: windowId)
+                }
+                await MainActor.run {
+                    SafariLiveTabStore.shared.scheduleRefresh(after: 0.5)
+                }
             }
+        case .openProfile(let number):
             dismiss(returnFocusToSafari: false)
+            Task { @MainActor in
+                switch await SafariProfileManager.shared.switchToProfileAsync(number: number) {
+                case .success:
+                    NotificationHUD.show(title: "Safari Profile", message: "Opened profile \(number).")
+                case .failure(let error):
+                    NotificationHUD.show(title: "Could not open profile \(number)", message: error.localizedDescription)
+                }
+            }
         case .showTrafficRule:
             dismiss(returnFocusToSafari: false)
             SettingsWindowController.shared.show(destination: .trafficControl)
@@ -161,31 +202,37 @@ final class CommandPaletteController: ObservableObject {
             dismiss(returnFocusToSafari: false)
             SettingsWindowController.shared.show(destination: destination)
         case .copyURL(let url):
-            ClipboardService.copy(url.absoluteString)
+            ClipboardService.copyAsync(url.absoluteString)
             NotificationHUD.show(title: "Copied URL", message: url.absoluteString)
             if state.mode == .actions { state.endActions(); refreshItems() }
         case .copyText(let text):
-            ClipboardService.copy(text)
+            ClipboardService.copyAsync(text)
             NotificationHUD.show(title: "Copied", message: text)
             if state.mode == .actions { state.endActions(); refreshItems() }
         case .removeRecent(let url):
             recentStore.remove(url: url)
             if state.mode == .actions { state.endActions() }
+            rebuildSuggestionDataSnapshot()
             refreshItems()
         case .removeSuggestion:
             if state.mode == .actions { state.endActions() }
+            rebuildSuggestionDataSnapshot()
             refreshItems()
         case .toggleWebSuggestions:
             AppSettings.shared.webSearchSuggestionsEnabled.toggle()
+            rebuildSuggestionDataSnapshot()
             refreshItems()
         case .toggleDuplicateTabSwitching:
             AppSettings.shared.switchToExistingSafariTabInsteadOfOpeningDuplicate.toggle()
+            rebuildSuggestionDataSnapshot()
             refreshItems()
         case .clearRecents:
             recentStore.clear()
+            rebuildSuggestionDataSnapshot()
             refreshItems()
         case .clearSearchHistory:
             CommandPanelSearchHistoryStore.shared.clear()
+            rebuildSuggestionDataSnapshot()
             refreshItems()
         case .refreshSafariBookmarks:
             bookmarkStore.reload(force: true)
@@ -224,16 +271,26 @@ final class CommandPaletteController: ObservableObject {
     }
 
     private func openURL(_ url: URL, title: String? = nil) {
-        if AppSettings.shared.switchToExistingSafariTabInsteadOfOpeningDuplicate,
-           let tab = liveTabStore.matchingTab(for: url) {
-            _ = SafariAutomation.shared.activateTab(windowId: tab.windowId, tabIndex: tab.tabIndex)
-        } else {
-            let preferredWindowId = FrontmostSafariMonitor.shared.activeWindowForSafariAction()?.safariWindowId
-            _ = SafariAutomation.shared.openURLInNewTab(url, preferredWindowId: preferredWindowId)
-        }
+        let normalizedURL = CommandPanelRecentStore.normalized(url)
+        let matchingTab = dataSnapshot.switchToExistingSafariTabInsteadOfOpeningDuplicate
+            ? dataSnapshot.safariTabs.first { tab in
+                guard let tabURL = tab.url else { return false }
+                return CommandPanelRecentStore.normalized(tabURL) == normalizedURL
+            }
+            : nil
+        let preferredWindowId = FrontmostSafariMonitor.shared.activeWindowForSafariAction()?.safariWindowId
         remember(url, title: title)
-        liveTabStore.scheduleRefresh(after: 0.5)
         dismiss(returnFocusToSafari: false)
+        Task.detached(priority: .userInitiated) {
+            if let matchingTab {
+                _ = SafariAutomation.shared.activateTab(windowId: matchingTab.windowId, tabIndex: matchingTab.tabIndex)
+            } else {
+                _ = SafariAutomation.shared.openURLInNewTab(url, preferredWindowId: preferredWindowId)
+            }
+            await MainActor.run {
+                SafariLiveTabStore.shared.scheduleRefresh(after: 0.5)
+            }
+        }
     }
 
     private func searchWeb(_ query: String) {
@@ -298,44 +355,83 @@ final class CommandPaletteController: ObservableObject {
         clipboardTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 350_000_000)
             guard !Task.isCancelled else { return }
+            let clipboardURL = await Task.detached(priority: .utility) {
+                Self.clipboardURLForPanelOpen()
+            }.value
+            guard !Task.isCancelled else { return }
             await MainActor.run {
                 guard let self else { return }
                 guard self.panel?.isVisible == true else { return }
                 guard self.state.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-                self.clipboardURL = Self.clipboardURLForPanelOpen()
+                self.clipboardURL = clipboardURL
                 self.scheduleRefresh(delay: 0)
             }
         }
     }
 
+    private func schedulePostShowSetup() {
+        postShowSetupTask?.cancel()
+        postShowSetupTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 120_000_000)
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                guard let self, self.panel?.isVisible == true else { return }
+                self.installOutsideClickMonitor()
+                self.installDismissEventTap()
+            }
+        }
+    }
+
     private func refreshVisibleItemsOrInvalidateCache() {
+        rebuildSuggestionDataSnapshot()
         guard panel?.isVisible == true else { return }
         scheduleRefresh(delay: 0)
     }
 
     private func makeSuggestionInput() -> CommandPanelSuggestionInput {
-        CommandPanelSuggestionInput(
+        let snapshot = dataSnapshot
+        return CommandPanelSuggestionInput(
             mode: state.mode,
             query: state.query,
             activeScope: state.activeScope,
             scopePickerQuery: state.scopePickerQuery,
             actionSourceSuggestion: state.actionSourceSuggestion,
-            recentItems: recentStore.items,
-            safariTabs: liveTabStore.tabs,
-            safariTabError: liveTabStore.lastError,
+            recentItems: snapshot.recentItems,
+            safariTabs: snapshot.safariTabs,
+            safariTabError: snapshot.safariTabError,
             clipboardURL: clipboardURL,
             webSuggestions: webSuggestions,
-            bookmarks: bookmarkStore.bookmarks,
-            bookmarkError: bookmarkStore.lastError,
-            isUsingStaleBookmarkCache: bookmarkStore.isUsingStaleCache,
-            profiles: ProfileStore.shared.profiles,
-            trafficRules: TrafficRuleStore.shared.rules,
-            usageRecords: CommandPanelUsageStore.shared.recordsSnapshot,
-            searchHistoryQueries: CommandPanelSearchHistoryStore.shared.queriesSnapshot,
-            webSearchSuggestionsEnabled: AppSettings.shared.webSearchSuggestionsEnabled,
-            switchToExistingSafariTabInsteadOfOpeningDuplicate: AppSettings.shared.switchToExistingSafariTabInsteadOfOpeningDuplicate,
-            searchShortcuts: AppSettings.shared.searchShortcuts
+            bookmarks: snapshot.bookmarks,
+            bookmarkError: snapshot.bookmarkError,
+            isUsingStaleBookmarkCache: snapshot.isUsingStaleBookmarkCache,
+            profiles: snapshot.profiles,
+            trafficRules: snapshot.trafficRules,
+            usageRecords: snapshot.usageRecords,
+            searchHistoryQueries: snapshot.searchHistoryQueries,
+            webSearchSuggestionsEnabled: snapshot.webSearchSuggestionsEnabled,
+            switchToExistingSafariTabInsteadOfOpeningDuplicate: snapshot.switchToExistingSafariTabInsteadOfOpeningDuplicate,
+            searchShortcuts: snapshot.searchShortcuts
         )
+    }
+
+    private func rebuildSuggestionDataSnapshot() {
+        dataSnapshot = PerformanceTimer.measure("command palette data snapshot rebuild") {
+            CommandPanelDataSnapshot(
+                recentItems: recentStore.items,
+                safariTabs: liveTabStore.tabs,
+                safariTabError: liveTabStore.lastError,
+                bookmarks: bookmarkStore.bookmarks,
+                bookmarkError: bookmarkStore.lastError,
+                isUsingStaleBookmarkCache: bookmarkStore.isUsingStaleCache,
+                profiles: ProfileStore.shared.profiles,
+                trafficRules: TrafficRuleStore.shared.rules,
+                usageRecords: CommandPanelUsageStore.shared.recordsSnapshot,
+                searchHistoryQueries: CommandPanelSearchHistoryStore.shared.queriesSnapshot,
+                webSearchSuggestionsEnabled: AppSettings.shared.webSearchSuggestionsEnabled,
+                switchToExistingSafariTabInsteadOfOpeningDuplicate: AppSettings.shared.switchToExistingSafariTabInsteadOfOpeningDuplicate,
+                searchShortcuts: AppSettings.shared.searchShortcuts
+            )
+        }
     }
 
     private func bindCachedStores() {
@@ -420,7 +516,8 @@ final class CommandPaletteController: ObservableObject {
     }
 
     private func scheduleWebSuggestions(for query: String) {
-        CommandPanelWebSuggestionService.shared.suggestions(for: query) { [weak self] suggestions in
+        let enabled = dataSnapshot.webSearchSuggestionsEnabled
+        CommandPanelWebSuggestionService.shared.suggestions(for: query, enabled: enabled) { [weak self] suggestions in
             guard let self else { return }
             guard self.webSuggestions != suggestions else { return }
             self.webSuggestions = suggestions
@@ -433,7 +530,7 @@ final class CommandPaletteController: ObservableObject {
         recentStore.record(url: url, title: title, windowId: window?.safariWindowId, profileHint: window?.profileHint)
     }
 
-    private static func clipboardURLForPanelOpen() -> URL? {
+    nonisolated private static func clipboardURLForPanelOpen() -> URL? {
         PerformanceTimer.measure("command palette pasteboard read") {
             guard let text = NSPasteboard.general.string(forType: .string) else { return nil }
             if case .url(let url) = URLParser().parse(text) { return url }
@@ -443,7 +540,9 @@ final class CommandPaletteController: ObservableObject {
 
     private func restoreSafariFocus() {
         if let windowId = FrontmostSafariMonitor.shared.snapshot.activeWindow?.safariWindowId {
-            _ = SafariAutomation.shared.activateWindow(windowId: windowId)
+            Task.detached(priority: .utility) {
+                _ = SafariAutomation.shared.activateWindow(windowId: windowId)
+            }
         } else if let safari = NSRunningApplication.runningApplications(withBundleIdentifier: FrontmostSafariMonitor.safariBundleIdentifier).first {
             safari.activate(options: [.activateAllWindows])
         }
@@ -582,26 +681,22 @@ final class CommandPaletteController: ObservableObject {
         dismissEventTapSource = nil
     }
 
-    fileprivate func handleDismissEventTap(event: CGEvent, type: CGEventType) -> Unmanaged<CGEvent>? {
+    fileprivate func handleDismissEventTap(type: CGEventType, location: CGPoint) {
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
             if let dismissEventTap { CGEvent.tapEnable(tap: dismissEventTap, enable: true) }
-            return Unmanaged.passUnretained(event)
+            return
         }
 
         guard let panel, panel.isVisible else {
             removeDismissEventTap()
-            return Unmanaged.passUnretained(event)
+            return
         }
 
         if type == .leftMouseDown || type == .rightMouseDown || type == .otherMouseDown {
-            let point = event.location
-            if !panel.frame.contains(point) {
+            if !panel.frame.contains(location) {
                 dismiss()
             }
-            return Unmanaged.passUnretained(event)
         }
-
-        return Unmanaged.passUnretained(event)
     }
 
     private func makePanel() -> NSPanel {
@@ -690,5 +785,9 @@ extension CommandPaletteController {
 private let commandPaletteDismissEventTapCallback: CGEventTapCallBack = { _, type, event, refcon in
     guard let refcon else { return Unmanaged.passUnretained(event) }
     let controller = Unmanaged<CommandPaletteController>.fromOpaque(refcon).takeUnretainedValue()
-    return MainActor.assumeIsolated { controller.handleDismissEventTap(event: event, type: type) }
+    let location = event.location
+    Task { @MainActor in
+        controller.handleDismissEventTap(type: type, location: location)
+    }
+    return Unmanaged.passUnretained(event)
 }

@@ -21,12 +21,14 @@ final class ProfileStore: ObservableObject {
     }
 
     @Published private(set) var lastDiscoveryMessage: String = "No named Safari profiles have been detected yet."
+    @Published private(set) var isRefreshing = false
 
     private let defaults = UserDefaults.standard
     private let key = "profiles.v3.namedOnlyAutoDiscovered"
     private var isPersistenceEnabled = true
     private var periodicRefreshTask: Task<Void, Never>?
     private var deferredRefreshTask: Task<Void, Never>?
+    private var refreshTask: Task<Void, Never>?
     private var safariSnapshotCancellable: AnyCancellable?
     private var lastRefreshAt: Date?
 
@@ -43,26 +45,40 @@ final class ProfileStore: ObservableObject {
         profiles.first { $0.assignedNumber == number }
     }
 
-    func refreshFromSafari() -> Result<[Profile], SafariAutomationError> {
+    func refreshFromSafari() {
+        refreshFromSafariAsync()
+    }
+
+    func refreshFromSafariAsync() {
+        refreshTask?.cancel()
         lastRefreshAt = Date()
-        switch SafariProfileManager.shared.discoverProfileNames() {
-        case .success(let names):
-            replaceWithDiscoveredNames(names)
-            if names.isEmpty {
-                lastDiscoveryMessage = "No named Safari profiles were found. Arklike only maps named profiles, not Safari’s default profile."
-            } else {
-                lastDiscoveryMessage = "Mapped Ctrl+1... to: \(profiles.map { "Ctrl+\($0.assignedNumber)=\($0.displayName)" }.joined(separator: ", "))."
+        isRefreshing = true
+        refreshTask = Task.detached(priority: .utility) {
+            let result = PerformanceTimer.measure("safari profile discovery") {
+                SafariProfileScriptRunner.discoverProfileNames()
             }
-            return .success(profiles)
-        case .failure(let error):
-            profiles = Self.normalized(profiles)
-            lastDiscoveryMessage = "Could not refresh Safari profile names: \(error.localizedDescription)"
-            return .failure(error)
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                let store = Self.shared
+                store.isRefreshing = false
+                switch result {
+                case .success(let names):
+                    store.replaceWithDiscoveredNames(names)
+                    if names.isEmpty {
+                        store.lastDiscoveryMessage = "No named Safari profiles were found. Arklike only maps named profiles, not Safari’s default profile."
+                    } else {
+                        store.lastDiscoveryMessage = "Mapped Ctrl+1... to: \(store.profiles.map { "Ctrl+\($0.assignedNumber)=\($0.displayName)" }.joined(separator: ", "))."
+                    }
+                case .failure(let error):
+                    store.profiles = Self.normalized(store.profiles)
+                    store.lastDiscoveryMessage = "Could not refresh Safari profile names: \(error.localizedDescription)"
+                }
+            }
         }
     }
 
     func ensureAutoDiscovered() {
-        _ = refreshFromSafari()
+        refreshFromSafariAsync()
     }
 
     func startPeriodicRefresh(interval: TimeInterval = 300) {
@@ -92,8 +108,10 @@ final class ProfileStore: ObservableObject {
     func stopPeriodicRefresh() {
         periodicRefreshTask?.cancel()
         deferredRefreshTask?.cancel()
+        refreshTask?.cancel()
         periodicRefreshTask = nil
         deferredRefreshTask = nil
+        refreshTask = nil
         safariSnapshotCancellable = nil
     }
 
@@ -112,7 +130,7 @@ final class ProfileStore: ObservableObject {
     private func refreshIfStale(maxAge: TimeInterval) {
         guard FrontmostSafariMonitor.shared.snapshot.isSafariFrontmost else { return }
         if let lastRefreshAt, Date().timeIntervalSince(lastRefreshAt) < maxAge { return }
-        _ = refreshFromSafari()
+        refreshFromSafariAsync()
     }
 
     func replaceWithDiscoveredNames(_ names: [String]) {
@@ -156,8 +174,10 @@ extension ProfileStore {
     func applyPreviewProfiles(_ profiles: [Profile], message: String) {
         periodicRefreshTask?.cancel()
         deferredRefreshTask?.cancel()
+        refreshTask?.cancel()
         periodicRefreshTask = nil
         deferredRefreshTask = nil
+        refreshTask = nil
         safariSnapshotCancellable = nil
         isPersistenceEnabled = false
         self.profiles = Self.normalized(profiles)

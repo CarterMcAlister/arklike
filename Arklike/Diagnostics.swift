@@ -8,6 +8,7 @@ final class Diagnostics: ObservableObject {
     private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "com.arklike.app", category: "Arklike")
     @Published private(set) var events: [String] = []
     @Published var lastRoutingDecision: String = "None"
+    @Published private(set) var lastSlowOperation: String = "None"
 
     private init() {}
 
@@ -17,8 +18,13 @@ final class Diagnostics: ObservableObject {
         events = Array(events.prefix(200))
     }
 
+    func recordSlowOperation(_ message: String) {
+        lastSlowOperation = message
+        log("Slow operation: \(message)")
+    }
+
     func copyDiagnostics() {
-        ClipboardService.copy(report())
+        ClipboardService.copyAsync(report())
     }
 
     func report() -> String {
@@ -36,6 +42,7 @@ final class Diagnostics: ObservableObject {
         Safari frontmost: \(safari.isSafariFrontmost)
         Active Safari window id: \(safari.activeWindow?.safariWindowId.map(String.init) ?? "Unknown")
         Active Safari title: \(safari.activeWindow?.title ?? "Unknown")
+        Last slow operation: \(lastSlowOperation)
         Profiles:
         \(profiles.isEmpty ? "None configured" : profiles)
         Last routing decision: \(lastRoutingDecision)

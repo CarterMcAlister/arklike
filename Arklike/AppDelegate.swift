@@ -12,6 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        MainThreadStallDetector.start()
         configureApplicationIcon()
         NSApp.setActivationPolicy(.accessory)
         FrontmostSafariMonitor.shared.start()
@@ -32,8 +33,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {
-        PermissionsManager.shared.refresh()
-        FrontmostSafariMonitor.shared.refresh(reason: "app became active")
+        PermissionsManager.shared.refreshAsync()
+        FrontmostSafariMonitor.shared.scheduleRefresh(reason: "app became active")
     }
 
     private func configureStatusItem() {
@@ -72,7 +73,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func handleShortcut(_ action: ShortcutAction) {
         switch action {
         case .commandPalette:
-            openCommandPalette()
+            Task { @MainActor in self.openCommandPalette() }
         case .copyCurrentURL:
             copyCurrentSafariURL()
         case .toggleSafariSidebar:
@@ -80,11 +81,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .profile1, .profile2, .profile3, .profile4, .profile5, .profile6, .profile7, .profile8, .profile9:
             guard let number = action.profileNumber else { return }
             Diagnostics.shared.log("Profile shortcut requested: \(number)")
-            switch SafariProfileManager.shared.switchToProfile(number: number) {
-            case .success:
-                NotificationHUD.show(title: "Safari Profile", message: "Opened profile \(number).")
-            case .failure(let error):
-                showPlaceholderAlert(title: "Could not open profile \(number)", message: error.localizedDescription)
+            Task { @MainActor in
+                switch await SafariProfileManager.shared.switchToProfileAsync(number: number) {
+                case .success:
+                    NotificationHUD.show(title: "Safari Profile", message: "Opened profile \(number).")
+                case .failure(let error):
+                    showPlaceholderAlert(title: "Could not open profile \(number)", message: error.localizedDescription)
+                }
             }
         }
     }
@@ -96,22 +99,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func copyCurrentSafariURL() {
         let preferredWindowId = FrontmostSafariMonitor.shared.activeWindowForSafariAction()?.safariWindowId
         Diagnostics.shared.log("Copy current Safari URL requested")
-        switch SafariAutomation.shared.getActiveTabURL(preferredWindowId: preferredWindowId) {
-        case .success(let url):
-            ClipboardService.copy(url.absoluteString)
-            ToastHUD.shared.showURLCopied()
-        case .failure(let error):
-            showPlaceholderAlert(title: "Could not copy URL", message: error.localizedDescription)
+        Task.detached(priority: .userInitiated) {
+            let result = SafariAutomation.shared.getActiveTabURL(preferredWindowId: preferredWindowId)
+            await MainActor.run {
+                switch result {
+                case .success(let url):
+                    ClipboardService.copyAsync(url.absoluteString)
+                    ToastHUD.shared.showURLCopied()
+                case .failure(let error):
+                    self.showPlaceholderAlert(title: "Could not copy URL", message: error.localizedDescription)
+                }
+            }
         }
     }
 
     private func toggleSafariSidebar() {
         Diagnostics.shared.log("Toggle Safari sidebar requested")
-        switch SafariSidebarController.shared.toggleSidebar() {
-        case .success:
-            NotificationHUD.show(title: "Safari Sidebar", message: "Toggled Safari’s native sidebar.")
-        case .failure(let error):
-            showPlaceholderAlert(title: "Could not toggle Safari sidebar", message: error.localizedDescription)
+        Task.detached(priority: .userInitiated) {
+            let result = SafariSidebarController.shared.toggleSidebar()
+            await MainActor.run {
+                switch result {
+                case .success:
+                    NotificationHUD.show(title: "Safari Sidebar", message: "Toggled Safari’s native sidebar.")
+                case .failure(let error):
+                    self.showPlaceholderAlert(title: "Could not toggle Safari sidebar", message: error.localizedDescription)
+                }
+            }
         }
     }
 
@@ -124,12 +137,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func showPlaceholderAlert(title: String, message: String) {
-        NSApp.activate(ignoringOtherApps: true)
-        let alert = NSAlert()
-        alert.messageText = title
-        alert.informativeText = message
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: "OK")
-        alert.runModal()
+        NotificationHUD.show(title: title, message: message)
     }
 }

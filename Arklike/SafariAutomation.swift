@@ -38,7 +38,6 @@ enum SafariAutomationError: LocalizedError, Equatable, Sendable {
     }
 }
 
-@MainActor
 final class SafariAutomation {
     static let shared = SafariAutomation()
 

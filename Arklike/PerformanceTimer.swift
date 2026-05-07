@@ -26,7 +26,11 @@ enum PerformanceTimer {
         let milliseconds = Double(duration.components.seconds) * 1_000
             + Double(duration.components.attoseconds) / 1_000_000_000_000_000
         if milliseconds >= 25 {
-            logger.info("\(label, privacy: .public) took \(milliseconds, privacy: .public)ms")
+            let message = "\(label) took \(String(format: "%.1f", milliseconds))ms"
+            logger.info("\(message, privacy: .public)")
+            Task { @MainActor in
+                Diagnostics.shared.recordSlowOperation(message)
+            }
         }
     }
 }

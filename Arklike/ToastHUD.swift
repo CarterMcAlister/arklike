@@ -12,11 +12,6 @@ final class ToastHUD {
 
     private init() {}
 
-    private struct WebViewportCandidate {
-        let frame: NSRect
-        let depth: Int
-    }
-
     func showURLCopied() {
         show(message: "Copied URL")
     }
@@ -76,15 +71,13 @@ final class ToastHUD {
     }
 
     private func position(panel: NSPanel) {
-        let webpageFrame = activeSafariWebPageFrameInAppKitCoordinates()
-        let frame = webpageFrame
-            ?? activeSafariWindowFrameInAppKitCoordinates()
+        let frame = screenForLastSafariWindow()?.visibleFrame
             ?? NSScreen.main?.visibleFrame
             ?? NSScreen.screens.first?.visibleFrame
         guard let frame else { return }
 
-        let horizontalInset: CGFloat = webpageFrame == nil ? 280 : 28
-        let topInset: CGFloat = webpageFrame == nil ? 78 : 24
+        let horizontalInset: CGFloat = 280
+        let topInset: CGFloat = 78
         let edgeInset: CGFloat = 12
         let leftAnchoredX = frame.minX + horizontalInset
         let origin = NSPoint(
@@ -94,147 +87,9 @@ final class ToastHUD {
         panel.setFrameOrigin(origin)
     }
 
-    private func activeSafariWindowFrameInAppKitCoordinates() -> NSRect? {
-        guard let window = activeSafariWindowElement() else { return nil }
-        return frameInAppKitCoordinates(for: window)
-    }
-
-    private func activeSafariWebPageFrameInAppKitCoordinates() -> NSRect? {
-        guard let window = activeSafariWindowElement(),
-              let windowFrame = frameInAppKitCoordinates(for: window) else { return nil }
-
-        let candidates = webViewportCandidates(in: window, depth: 0, remainingDepth: 10)
-        let pageSizedCandidates = candidates.filter { candidate in
-            candidate.frame.width >= windowFrame.width * 0.35
-                && candidate.frame.height >= windowFrame.height * 0.35
-        }
-        let usableCandidates = pageSizedCandidates.isEmpty ? candidates : pageSizedCandidates
-
-        return usableCandidates.sorted { lhs, rhs in
-            let leftDelta = abs(lhs.frame.minX - rhs.frame.minX)
-            if leftDelta > 8 { return lhs.frame.minX < rhs.frame.minX }
-            if lhs.depth != rhs.depth { return lhs.depth < rhs.depth }
-            return lhs.frame.width * lhs.frame.height > rhs.frame.width * rhs.frame.height
-        }.first?.frame
-    }
-
-    private func activeSafariWindowElement() -> AXUIElement? {
-        guard let safari = NSRunningApplication.runningApplications(withBundleIdentifier: FrontmostSafariMonitor.safariBundleIdentifier).first else { return nil }
-        let appElement = AXUIElementCreateApplication(safari.processIdentifier)
-
-        if let focused = axWindowAttribute(kAXFocusedWindowAttribute, from: appElement) {
-            return focused
-        }
-
-        if let main = axWindowAttribute(kAXMainWindowAttribute, from: appElement) {
-            return main
-        }
-
-        let snapshot = FrontmostSafariMonitor.shared.snapshot.activeWindow
-        let windows = axWindows(from: appElement)
-        if let snapshot,
-           let matched = windows.first(where: { window in
-               let titleMatches = snapshot.title != nil && axString(kAXTitleAttribute, from: window) == snapshot.title
-               let numberMatches = snapshot.accessibilityWindowNumber != nil && axInt("AXWindowNumber", from: window) == snapshot.accessibilityWindowNumber
-               return titleMatches || numberMatches
-           }) {
-            return matched
-        }
-
-        return windows.first
-    }
-
-    private func axWindowAttribute(_ attribute: String, from appElement: AXUIElement) -> AXUIElement? {
-        var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(appElement, attribute as CFString, &value) == .success,
-              let value else { return nil }
-        return (value as! AXUIElement)
-    }
-
-    private func axWindows(from appElement: AXUIElement) -> [AXUIElement] {
-        var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(appElement, kAXWindowsAttribute as CFString, &value) == .success,
-              let windows = value as? [AXUIElement] else { return [] }
-        return windows
-    }
-
-    private func webViewportCandidates(in element: AXUIElement, depth: Int, remainingDepth: Int) -> [WebViewportCandidate] {
-        guard remainingDepth >= 0 else { return [] }
-
-        var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &value) == .success,
-              let children = value as? [AXUIElement] else { return [] }
-
-        var candidates: [WebViewportCandidate] = []
-        if axString(kAXRoleAttribute, from: element) == "AXScrollArea",
-           children.contains(where: { axString(kAXRoleAttribute, from: $0) == "AXWebArea" }),
-           let frame = frameInAppKitCoordinates(for: element) {
-            candidates.append(WebViewportCandidate(frame: frame, depth: depth))
-        }
-
-        candidates.append(contentsOf: children.flatMap { child in
-            webViewportCandidates(in: child, depth: depth + 1, remainingDepth: remainingDepth - 1)
-        })
-
-        return candidates
-    }
-
-    private func frameInAppKitCoordinates(for element: AXUIElement) -> NSRect? {
-        if let frame = axFrameAttributeInAppKitCoordinates(for: element) {
-            return frame
-        }
-
-        return axPositionAndSizeFrameInAppKitCoordinates(for: element)
-    }
-
-    private func axFrameAttributeInAppKitCoordinates(for element: AXUIElement) -> NSRect? {
-        var frameValue: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(element, "AXFrame" as CFString, &frameValue) == .success,
-              let frameValue else { return nil }
-        var quartzRect = CGRect.zero
-        guard AXValueGetValue(frameValue as! AXValue, .cgRect, &quartzRect) else { return nil }
-        return appKitRectFromQuartzRect(quartzRect)
-    }
-
-    private func axPositionAndSizeFrameInAppKitCoordinates(for element: AXUIElement) -> NSRect? {
-        var positionValue: CFTypeRef?
-        var sizeValue: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(element, kAXPositionAttribute as CFString, &positionValue) == .success,
-              AXUIElementCopyAttributeValue(element, kAXSizeAttribute as CFString, &sizeValue) == .success,
-              let positionValue, let sizeValue else { return nil }
-        var quartzOrigin = CGPoint.zero
-        var windowSize = CGSize.zero
-        guard AXValueGetValue(positionValue as! AXValue, .cgPoint, &quartzOrigin),
-              AXValueGetValue(sizeValue as! AXValue, .cgSize, &windowSize) else { return nil }
-        return appKitRectFromQuartzRect(CGRect(origin: quartzOrigin, size: windowSize))
-    }
-
-    private func appKitRectFromQuartzRect(_ quartzRect: CGRect) -> NSRect? {
-        let quartzCenter = CGPoint(x: quartzRect.midX, y: quartzRect.midY)
-        for screen in NSScreen.screens {
-            guard let displayID = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID else { continue }
-            let displayBounds = CGDisplayBounds(displayID)
-            guard displayBounds.contains(quartzCenter) else { continue }
-            let x = screen.frame.minX + (quartzRect.minX - displayBounds.minX)
-            let yTop = quartzRect.minY - displayBounds.minY
-            let y = screen.frame.maxY - yTop - quartzRect.height
-            return NSRect(x: x, y: y, width: quartzRect.width, height: quartzRect.height)
-        }
-        return nil
-    }
-
-    private func axString(_ attribute: String, from element: AXUIElement) -> String? {
-        var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success else { return nil }
-        return value as? String
-    }
-
-    private func axInt(_ attribute: String, from element: AXUIElement) -> Int? {
-        var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success, let value else { return nil }
-        if let number = value as? NSNumber { return number.intValue }
-        if let string = value as? String { return Int(string) }
-        return nil
+    private func screenForLastSafariWindow() -> NSScreen? {
+        guard let center = FrontmostSafariMonitor.shared.lastActiveWindowForSafariAction()?.center else { return nil }
+        return NSScreen.screens.first { $0.frame.contains(center) }
     }
 }
 

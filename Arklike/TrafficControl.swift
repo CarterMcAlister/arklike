@@ -8,13 +8,6 @@ enum TrafficMatcherType: String, Codable, CaseIterable, Identifiable, Sendable {
     var id: String { rawValue }
 }
 
-enum TrafficOpenBehavior: String, Codable, CaseIterable, Identifiable, Sendable {
-    case newTab
-    case newWindow
-    case reuseProfileWindow
-    var id: String { rawValue }
-}
-
 struct TrafficRule: Identifiable, Codable, Equatable, Sendable {
     var id = UUID()
     var enabled = true
@@ -23,7 +16,6 @@ struct TrafficRule: Identifiable, Codable, Equatable, Sendable {
     var matcherType: TrafficMatcherType
     var pattern: String
     var targetProfileNumber: Int
-    var openBehavior: TrafficOpenBehavior = .reuseProfileWindow
 }
 
 struct TrafficRuleMatch: Equatable, Sendable {
