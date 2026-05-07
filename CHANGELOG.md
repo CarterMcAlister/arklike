@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/CarterMcAlister/arklike/compare/v0.3.0...v0.3.1) (2026-05-06)
+
+
+### Bug Fixes
+
+* improve command palette responsiveness ([838d508](https://github.com/CarterMcAlister/arklike/commit/838d5087db44cf3003be621dedcf2541570e1c88))
+
 ## [0.3.0](https://github.com/CarterMcAlister/arklike/compare/v0.2.0...v0.3.0) (2026-05-07)
 
 
