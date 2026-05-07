@@ -96,6 +96,16 @@
 		A000000000000000000106 /* SafariLiveTabStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SafariLiveTabStore.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
+/* Begin PBXContainerItemProxy section */
+		A000000000000000000119 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A00000000000000000000060 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A00000000000000000000040;
+			remoteInfo = Arklike;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFrameworksBuildPhase section */
 		A00000000000000000000020 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
@@ -217,6 +227,7 @@
 			buildRules = (
 			);
 			dependencies = (
+				A00000000000000000011A /* PBXTargetDependency */,
 			);
 			name = ArklikeTests;
 			productName = ArklikeTests;
@@ -235,6 +246,10 @@
 				TargetAttributes = {
 					A00000000000000000000040 = {
 						CreatedOnToolsVersion = 16.4;
+					};
+					A0000000000000000000E0 = {
+						CreatedOnToolsVersion = 16.4;
+						TestTargetID = A00000000000000000000040;
 					};
 				};
 			};
@@ -313,6 +328,14 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		A00000000000000000011A /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A00000000000000000000040 /* Arklike */;
+			targetProxy = A000000000000000000119 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		A00000000000000000000062 /* Debug */ = {
