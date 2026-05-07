@@ -16,14 +16,33 @@ build/
 !default.mode2v3
 *.perspectivev3
 !default.perspectivev3
+*.xcworkspace/xcuserdata/
 xcuserdata/
+*.xcuserdatad/
 *.xcuserstate
 *.xcscmblueprint
+*.xcresult
+*.moved-aside
 
-# Swift / local builds
+# Swift Package Manager
 .build/
 .swiftpm/
+Packages/
 Package.resolved
+
+# Swift / Xcode build artifacts
+*.dSYM/
+*.dSYM.zip
+*.hmap
+*.ipa
+*.app.dSYM/
+
+# Playgrounds
+timeline.xctimeline
+playground.xcworkspace/
+
+# Release artifacts
+dist/
 
 # Logs and diagnostics
 *.log
