@@ -12,6 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        configureApplicationIcon()
         NSApp.setActivationPolicy(.accessory)
         FrontmostSafariMonitor.shared.start()
         SafariBookmarkStore.shared.startPeriodicRefresh()
@@ -21,6 +22,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.handleShortcut(action)
         }
         configureStatusItem()
+    }
+
+    private func configureApplicationIcon() {
+        if let iconURL = Bundle.main.url(forResource: "AppIcon", withExtension: "icns"),
+           let icon = NSImage(contentsOf: iconURL) {
+            NSApp.applicationIconImage = icon
+        }
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {

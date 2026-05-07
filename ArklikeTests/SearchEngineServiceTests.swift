@@ -3,7 +3,7 @@ import XCTest
 
 final class SearchEngineServiceTests: XCTestCase {
     func testPercentEncodesSearchQuery() {
-        let url = SearchEngineService.searchURL(for: "hello world & swift", template: "https://example.com/search?q=%@")
+        let url = SearchEngineService.searchURL(for: "hello world & swift", template: "https://example.com/search?q={query}")
         XCTAssertEqual(url?.absoluteString, "https://example.com/search?q=hello%20world%20%26%20swift")
     }
 

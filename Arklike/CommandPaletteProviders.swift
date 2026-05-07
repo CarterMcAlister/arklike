@@ -198,22 +198,45 @@ struct WebSuggestionCommandProvider: CommandPanelSuggestionProviding {
 
 struct SearchShortcutCommandProvider: CommandPanelSuggestionProviding {
     let providerName = "Search Shortcuts"
-    private let shortcuts: [(keyword: String, aliases: [String], name: String, template: String)] = [("g", ["google"], "Google", "https://www.google.com/search?q=%@"), ("ddg", ["duckduckgo"], "DuckDuckGo", "https://duckduckgo.com/?q=%@"), ("gh", ["github"], "GitHub", "https://github.com/search?q=%@"), ("yt", ["youtube"], "YouTube", "https://www.youtube.com/results?search_query=%@")]
 
     func suggestions(for query: String, input: CommandPanelSuggestionInput) -> [CommandPanelSuggestion] {
         guard input.activeScope == nil || input.activeScope == .all else { return [] }
+        let shortcuts = input.searchShortcuts.filter { $0.isEnabled && !$0.normalizedKeyword.isEmpty && !$0.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        guard !shortcuts.isEmpty else { return [] }
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         let parts = trimmed.split(separator: " ", maxSplits: 1).map(String.init)
-        let candidate = parts.first?.trimmingCharacters(in: CharacterSet(charactersIn: ":")).lowercased() ?? ""
-        let matched = shortcuts.first { $0.keyword == candidate || $0.aliases.contains(candidate) || trimmed.hasPrefix($0.keyword + ":") }
+        let candidate = Self.shortcutToken(in: parts.first ?? "")
+        let matched = shortcuts.first { $0.normalizedTokens.contains(candidate) }
         if let shortcut = matched {
-            let searchText = trimmed.hasPrefix(shortcut.keyword + ":") ? String(trimmed.dropFirst(shortcut.keyword.count + 1)).trimmingCharacters(in: .whitespacesAndNewlines) : (parts.dropFirst().first ?? "")
-            guard !searchText.isEmpty, let url = SearchEngineService.searchURL(for: searchText, template: shortcut.template) else { return [] }
-            return [CommandPanelSuggestion(id: "site-shortcut-run-\(shortcut.keyword)-\(searchText)", title: "Search \(shortcut.name) for “\(searchText)”", subtitle: url.absoluteString, kind: .siteShortcut, scope: .all, representedURL: url, primaryAction: .openURL(url), alternateActions: CommandPanelSuggestion.urlActions(url), basePriority: CommandPaletteRanking.rank(for: .siteShortcut))]
+            let searchText = Self.searchText(in: trimmed, matchedToken: candidate)
+            guard !searchText.isEmpty else {
+                return [shortcutSuggestion(shortcut, isExactShortcutMatch: true)]
+            }
+            guard let url = SearchEngineService.searchURL(for: searchText, template: shortcut.urlTemplate) else { return [] }
+            return [CommandPanelSuggestion(id: "site-shortcut-run-\(shortcut.id.uuidString)-\(searchText)", title: "Search \(shortcut.name) for “\(searchText)”", subtitle: url.absoluteString, kind: .siteShortcut, scope: .all, representedURL: url, primaryAction: .openURL(url), alternateActions: CommandPanelSuggestion.urlActions(url), basePriority: CommandPaletteRanking.rank(for: .siteShortcut), isExactShortcutMatch: true)]
         }
         return shortcuts.map { shortcut in
-            CommandPanelSuggestion(id: "site-shortcut-\(shortcut.keyword)", title: "\(shortcut.keyword): Search \(shortcut.name)", subtitle: "Type \(shortcut.keyword) + space to search \(shortcut.name)", kind: .siteShortcut, scope: .all, representedURL: nil, primaryAction: .noop("Enter a query for \(shortcut.name)"), basePriority: CommandPaletteRanking.rank(for: .siteShortcut))
+            shortcutSuggestion(shortcut)
         }
+    }
+
+    private func shortcutSuggestion(_ shortcut: SearchShortcut, isExactShortcutMatch: Bool = false) -> CommandPanelSuggestion {
+        CommandPanelSuggestion(id: "site-shortcut-\(shortcut.id.uuidString)", title: "\(shortcut.keyword): Search \(shortcut.name)", subtitle: "Type \(shortcut.keyword) + space to search \(shortcut.name)", kind: .siteShortcut, scope: .all, representedURL: nil, primaryAction: .noop("Enter a query for \(shortcut.name)"), basePriority: CommandPaletteRanking.rank(for: .siteShortcut), isExactShortcutMatch: isExactShortcutMatch)
+    }
+
+    private static func searchText(in query: String, matchedToken: String) -> String {
+        if query.lowercased().hasPrefix(matchedToken + ":") {
+            return String(query.dropFirst(matchedToken.count + 1)).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return query.split(separator: " ", maxSplits: 1).dropFirst().first.map(String.init) ?? ""
+    }
+
+    private static func shortcutToken(in firstPart: String) -> String {
+        let lowercased = firstPart.lowercased()
+        if let colonIndex = lowercased.firstIndex(of: ":") {
+            return String(lowercased[..<colonIndex]).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return lowercased.trimmingCharacters(in: CharacterSet(charactersIn: ":"))
     }
 }
 
@@ -304,6 +327,7 @@ struct SettingsCommandProvider: CommandPanelSuggestionProviding {
             settingsRow("settings-general", "Open Settings", "Return to run this command", .openSettings(.general), "gearshape"),
             settingsRow("settings-permissions", "Open Permissions Settings", "Return to run this command", .openSettings(.permissions), "lock.shield"),
             settingsRow("settings-shortcuts", "Open Shortcuts Settings", "Return to run this command", .openSettings(.shortcuts), "keyboard"),
+            settingsRow("settings-search-shortcuts", "Open Search Shortcuts Settings", "Return to run this command", .openSettings(.searchShortcuts), "magnifyingglass.circle"),
             settingsRow("settings-profiles", "Open Profiles Settings", "Return to run this command", .openSettings(.profiles), "person.crop.circle"),
             settingsRow("settings-traffic", "Open Traffic Control Settings", "Return to run this command", .openSettings(.trafficControl), "arrow.triangle.branch"),
             settingsRow("settings-diagnostics", "Open Diagnostics Settings", "Return to run this command", .openSettings(.diagnostics), "stethoscope"),

@@ -10,7 +10,7 @@ final class SearchEngineService: ObservableObject {
 
     private let defaults: UserDefaults
     private static let templateKey = "searchEngine.template"
-    nonisolated static let defaultTemplate = "https://www.google.com/search?q=%@"
+    nonisolated static let defaultTemplate = "https://www.google.com/search?q={query}"
 
     private init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -24,9 +24,7 @@ final class SearchEngineService: ObservableObject {
     nonisolated static func searchURL(for query: String, template: String = defaultTemplate) -> URL? {
         let encoded = query.addingPercentEncoding(withAllowedCharacters: .arklikeSearchQueryAllowed) ?? query
         let string: String
-        if template.contains("%@") {
-            string = String(format: template, encoded)
-        } else if template.contains("{query}") {
+        if template.contains("{query}") {
             string = template.replacingOccurrences(of: "{query}", with: encoded)
         } else {
             let separator = template.contains("?") ? "&" : "?"

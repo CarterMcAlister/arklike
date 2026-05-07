@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.4.2](https://github.com/CarterMcAlister/arklike/compare/v0.4.1...v0.4.2) (2026-05-07)
+
+
+### Features
+
+* add configurable command palette search shortcuts
+* split search shortcuts into their own settings tab
+
+
+### Bug Fixes
+
+* apply the Arklike app icon across the app bundle
+
 ## [0.4.1](https://github.com/CarterMcAlister/arklike/compare/v0.4.0...v0.4.1) (2026-05-07)
 
 

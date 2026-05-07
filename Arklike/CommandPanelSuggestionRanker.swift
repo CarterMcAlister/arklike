@@ -45,6 +45,10 @@ struct CommandPanelSuggestionRanker: Sendable {
             return ranked
         }
         .sorted { lhs, rhs in
+            if lhs.isExactShortcutMatch != rhs.isExactShortcutMatch {
+                return lhs.isExactShortcutMatch
+            }
+
             let lhsBucket = terminalSortBucket(lhs, activeScope: activeScope, queryProfile: queryProfile)
             let rhsBucket = terminalSortBucket(rhs, activeScope: activeScope, queryProfile: queryProfile)
             if lhsBucket != rhsBucket { return lhsBucket < rhsBucket }
@@ -92,7 +96,9 @@ struct CommandPanelSuggestionRanker: Sendable {
             return emptyQueryScore(suggestion)
         }
 
+        let exactShortcutBoost = suggestion.isExactShortcutMatch ? 10_000 : 0
         return suggestion.fuzzyScore
+            + Double(exactShortcutBoost)
             + baseUsefulnessScore(suggestion)
             + intentScore(suggestion, queryProfile: queryProfile)
             + knownDestinationMatchBoost(suggestion, queryProfile: queryProfile)
@@ -180,7 +186,7 @@ struct CommandPanelSuggestionRanker: Sendable {
         if queryProfile.shortcutKeyword != nil {
             switch suggestion.kind {
             case .siteShortcut:
-                return suggestion.representedURL == nil ? 420 : 1_200
+                return suggestion.isExactShortcutMatch ? 1_200 : 0
             case .search:
                 return -250
             case .webSuggestion, .searchHistory:

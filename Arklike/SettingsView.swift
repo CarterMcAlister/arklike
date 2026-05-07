@@ -6,6 +6,7 @@ private enum SettingsTab: Hashable {
     case profiles
     case trafficControl
     case shortcuts
+    case searchShortcuts
     case diagnostics
 
     init(destination: SettingsDestination) {
@@ -20,6 +21,8 @@ private enum SettingsTab: Hashable {
             self = .trafficControl
         case .shortcuts:
             self = .shortcuts
+        case .searchShortcuts:
+            self = .searchShortcuts
         case .diagnostics:
             self = .diagnostics
         }
@@ -59,6 +62,10 @@ struct SettingsView: View {
             shortcutsTab
                 .tabItem { Label("Shortcuts", systemImage: "keyboard") }
                 .tag(SettingsTab.shortcuts)
+
+            searchShortcutsTab
+                .tabItem { Label("Search Shortcuts", systemImage: "magnifyingglass.circle") }
+                .tag(SettingsTab.searchShortcuts)
 
             diagnosticsTab
                 .tabItem { Label("Diagnostics", systemImage: "stethoscope") }
@@ -176,6 +183,18 @@ struct SettingsView: View {
             )
 
             ShortcutSettingsView()
+                .settingsCard()
+        }
+    }
+
+    private var searchShortcutsTab: some View {
+        settingsPage {
+            sectionHeader(
+                title: "Search Shortcuts",
+                description: "Configure command-palette shortcuts like “gh test” for site-specific searches."
+            )
+
+            SearchShortcutSettingsView()
                 .settingsCard()
         }
     }

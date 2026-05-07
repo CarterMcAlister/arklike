@@ -40,6 +40,40 @@ final class CommandPanelSuggestionComputerTests: XCTestCase {
         XCTAssertTrue(suggestions.dropFirst().prefix(2).contains { $0.kind == .webSuggestion })
     }
 
+    func testExactSearchShortcutTokenOutranksVerbatimSearch() {
+        let input = suggestionInput(query: "gh test")
+
+        let suggestions = computer.suggestions(input: input)
+
+        XCTAssertEqual(suggestions.first?.kind, .siteShortcut)
+        XCTAssertEqual(suggestions.first?.title, "Search GitHub for “test”")
+    }
+
+    func testConfigurableSearchShortcutIsUsedByCommandPalette() {
+        let shortcut = SearchShortcut(
+            id: UUID(uuidString: "11111111-1111-1111-1111-111111111111")!,
+            keyword: "so",
+            aliasesText: "stackoverflow",
+            name: "Stack Overflow",
+            urlTemplate: "https://stackoverflow.com/search?q={query}",
+            isEnabled: true
+        )
+        let input = suggestionInput(query: "so swift", searchShortcuts: [shortcut])
+
+        let suggestions = computer.suggestions(input: input)
+
+        XCTAssertEqual(suggestions.first?.kind, .siteShortcut)
+        XCTAssertEqual(suggestions.first?.representedURL?.absoluteString, "https://stackoverflow.com/search?q=swift")
+    }
+
+    func testSearchShortcutDoesNotGetExactBoostWithoutExactTokenMatch() {
+        let input = suggestionInput(query: "githubish test")
+
+        let suggestions = computer.suggestions(input: input)
+
+        XCTAssertNotEqual(suggestions.first?.kind, .siteShortcut)
+    }
+
     func testURLQueryPrioritizesURLOpenBehavior() {
         let url = URL(string: "https://example.com")!
         let input = suggestionInput(query: url.absoluteString)
@@ -116,7 +150,8 @@ final class CommandPanelSuggestionComputerTests: XCTestCase {
         usageRecords: [String: CommandPanelUsageRecord] = [:],
         searchHistoryQueries: [String] = [],
         webSearchSuggestionsEnabled: Bool = true,
-        switchToExistingSafariTabInsteadOfOpeningDuplicate: Bool = false
+        switchToExistingSafariTabInsteadOfOpeningDuplicate: Bool = false,
+        searchShortcuts: [SearchShortcut] = SearchShortcut.defaults
     ) -> CommandPanelSuggestionInput {
         CommandPanelSuggestionInput(
             mode: mode,
@@ -137,7 +172,8 @@ final class CommandPanelSuggestionComputerTests: XCTestCase {
             usageRecords: usageRecords,
             searchHistoryQueries: searchHistoryQueries,
             webSearchSuggestionsEnabled: webSearchSuggestionsEnabled,
-            switchToExistingSafariTabInsteadOfOpeningDuplicate: switchToExistingSafariTabInsteadOfOpeningDuplicate
+            switchToExistingSafariTabInsteadOfOpeningDuplicate: switchToExistingSafariTabInsteadOfOpeningDuplicate,
+            searchShortcuts: searchShortcuts
         )
     }
 }

@@ -46,6 +46,31 @@ final class CommandPanelSuggestionRankerTests: XCTestCase {
         XCTAssertEqual(ranked.first?.kind, .settings)
     }
 
+    func testExactShortcutMatchAlwaysRanksFirst() {
+        let url = URL(string: "https://github.com/search?q=test")!
+        let suggestions = [
+            suggestion(id: "ranker-test-bookmark-shortcut", title: "GitHub Test", subtitle: "https://github.com/test", kind: .bookmark, representedURL: URL(string: "https://github.com/test")!, action: .openURL(URL(string: "https://github.com/test")!), basePriority: 1),
+            suggestion(id: "ranker-test-search-shortcut", title: "Search for “gh test”", kind: .search, representedURL: nil, action: .search("gh test"), basePriority: 80),
+            suggestion(id: "ranker-test-site-shortcut", title: "Search GitHub for “test”", subtitle: url.absoluteString, kind: .siteShortcut, representedURL: url, action: .openURL(url), basePriority: 0, isExactShortcutMatch: true)
+        ]
+
+        let ranked = ranker.rank(suggestions, query: "gh test", activeScope: nil, usageRecords: [:])
+
+        XCTAssertEqual(ranked.first?.id, "ranker-test-site-shortcut")
+    }
+
+    func testShortcutDoesNotGetExactPriorityWithoutExactMatchFlag() {
+        let url = URL(string: "https://example.com/search?q=unrelated")!
+        let suggestions = [
+            suggestion(id: "ranker-test-bookmark-no-shortcut", title: "Exact", subtitle: "https://example.com/exact", kind: .bookmark, representedURL: URL(string: "https://example.com/exact")!, action: .openURL(URL(string: "https://example.com/exact")!), basePriority: 1),
+            suggestion(id: "ranker-test-site-no-shortcut", title: "Unrelated Site Search", subtitle: url.absoluteString, kind: .siteShortcut, representedURL: url, action: .openURL(url), basePriority: 0)
+        ]
+
+        let ranked = ranker.rank(suggestions, query: "exact", activeScope: nil, usageRecords: [:])
+
+        XCTAssertNotEqual(ranked.first?.id, "ranker-test-site-no-shortcut")
+    }
+
     func testEmptyQueryPromotesActionableItemsAndDemotesPlaceholder() {
         let url = URL(string: "https://example.com")!
         let suggestions = [
@@ -68,7 +93,8 @@ final class CommandPanelSuggestionRankerTests: XCTestCase {
         kind: CommandPanelSuggestionKind,
         representedURL: URL?,
         action: CommandPaletteAction,
-        basePriority: Int
+        basePriority: Int,
+        isExactShortcutMatch: Bool = false
     ) -> CommandPanelSuggestion {
         CommandPanelSuggestion(
             id: id,
@@ -78,7 +104,8 @@ final class CommandPanelSuggestionRankerTests: XCTestCase {
             scope: .all,
             representedURL: representedURL,
             primaryAction: action,
-            basePriority: basePriority
+            basePriority: basePriority,
+            isExactShortcutMatch: isExactShortcutMatch
         )
     }
 

@@ -95,10 +95,70 @@ struct ShortcutSettingsView: View {
     }
 }
 
+struct SearchShortcutSettingsView: View {
+    @StateObject private var appSettings = AppSettings.shared
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Search Shortcuts")
+                    .font(.headline)
+                Spacer()
+                Button("Add") { appSettings.addSearchShortcut() }
+                Button("Reset") { appSettings.resetSearchShortcuts() }
+            }
+
+            Text("Type a keyword followed by a space or colon in the command palette, such as “gh test”, to search a specific site. URL templates use {query} for the encoded search text.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 8) {
+                GridRow {
+                    Text("On").font(.caption).foregroundStyle(.secondary)
+                    Text("Keyword").font(.caption).foregroundStyle(.secondary)
+                    Text("Name").font(.caption).foregroundStyle(.secondary)
+                    Text("Aliases").font(.caption).foregroundStyle(.secondary)
+                    Text("URL Template").font(.caption).foregroundStyle(.secondary)
+                    Text("")
+                }
+
+                ForEach($appSettings.searchShortcuts) { $shortcut in
+                    GridRow {
+                        Toggle("", isOn: $shortcut.isEnabled)
+                            .labelsHidden()
+                        TextField("gh", text: $shortcut.keyword)
+                            .frame(width: 54)
+                        TextField("GitHub", text: $shortcut.name)
+                            .frame(width: 110)
+                        TextField("github", text: $shortcut.aliasesText)
+                            .frame(width: 110)
+                        TextField("https://example.com/search?q={query}", text: $shortcut.urlTemplate)
+                            .frame(minWidth: 230)
+                        Button(role: .destructive) {
+                            appSettings.deleteSearchShortcut(id: shortcut.id)
+                        } label: {
+                            Image(systemName: "trash")
+                        }
+                        .buttonStyle(.borderless)
+                    }
+                }
+            }
+        }
+    }
+}
+
 #if DEBUG
 #Preview("Shortcut Settings") {
     let _ = PreviewFixtures.configureAppState()
     ShortcutSettingsView()
+        .padding(20)
+        .frame(width: 720)
+}
+
+#Preview("Search Shortcut Settings") {
+    let _ = PreviewFixtures.configureAppState()
+    SearchShortcutSettingsView()
         .padding(20)
         .frame(width: 720)
 }

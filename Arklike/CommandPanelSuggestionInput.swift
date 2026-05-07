@@ -21,4 +21,5 @@ struct CommandPanelSuggestionInput: Sendable {
     let searchHistoryQueries: [String]
     let webSearchSuggestionsEnabled: Bool
     let switchToExistingSafariTabInsteadOfOpeningDuplicate: Bool
+    let searchShortcuts: [SearchShortcut]
 }

@@ -167,11 +167,16 @@ struct CommandPanelSuggestionComputer: Sendable {
         let searchSuggestions = ranked.filter(isSearchSuggestion)
 
         var selected = [CommandPanelSuggestion]()
-        if let verbatimSearch {
-            selected.append(verbatimSearch)
+        if let exactShortcut = ranked.first(where: { $0.isExactShortcutMatch }) {
+            selected.append(exactShortcut)
         }
 
         var selectedIDs = Set(selected.map(\.id))
+        if let verbatimSearch, !selectedIDs.contains(verbatimSearch.id) {
+            selected.append(verbatimSearch)
+            selectedIDs.insert(verbatimSearch.id)
+        }
+
         for suggestion in searchSuggestions where !selectedIDs.contains(suggestion.id) {
             guard selected.count < CommandPanelSuggestionLimits.searchSuggestionReserve else { break }
             selected.append(suggestion)

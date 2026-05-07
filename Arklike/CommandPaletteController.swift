@@ -333,7 +333,8 @@ final class CommandPaletteController: ObservableObject {
             usageRecords: CommandPanelUsageStore.shared.recordsSnapshot,
             searchHistoryQueries: CommandPanelSearchHistoryStore.shared.queriesSnapshot,
             webSearchSuggestionsEnabled: AppSettings.shared.webSearchSuggestionsEnabled,
-            switchToExistingSafariTabInsteadOfOpeningDuplicate: AppSettings.shared.switchToExistingSafariTabInsteadOfOpeningDuplicate
+            switchToExistingSafariTabInsteadOfOpeningDuplicate: AppSettings.shared.switchToExistingSafariTabInsteadOfOpeningDuplicate,
+            searchShortcuts: AppSettings.shared.searchShortcuts
         )
     }
 

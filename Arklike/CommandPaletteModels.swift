@@ -106,6 +106,7 @@ struct CommandPanelSuggestion: Identifiable, Equatable, Sendable {
     var matchRanges: [Range<String.Index>]
     var titleMatchRanges: [Range<String.Index>]
     var subtitleMatchRanges: [Range<String.Index>]
+    var isExactShortcutMatch: Bool
 
     var action: CommandPaletteAction { primaryAction }
     var rank: Int { basePriority }
@@ -126,7 +127,8 @@ struct CommandPanelSuggestion: Identifiable, Equatable, Sendable {
         lastUsedAt: Date? = nil,
         matchRanges: [Range<String.Index>] = [],
         titleMatchRanges: [Range<String.Index>] = [],
-        subtitleMatchRanges: [Range<String.Index>] = []
+        subtitleMatchRanges: [Range<String.Index>] = [],
+        isExactShortcutMatch: Bool = false
     ) {
         self.id = id
         self.title = title
@@ -144,6 +146,7 @@ struct CommandPanelSuggestion: Identifiable, Equatable, Sendable {
         self.matchRanges = matchRanges
         self.titleMatchRanges = titleMatchRanges
         self.subtitleMatchRanges = subtitleMatchRanges
+        self.isExactShortcutMatch = isExactShortcutMatch
     }
 
     static func == (lhs: CommandPanelSuggestion, rhs: CommandPanelSuggestion) -> Bool {
@@ -209,6 +212,7 @@ enum CommandPaletteAction: Equatable, Sendable {
 enum SettingsDestination: String, Equatable, Codable, CaseIterable, Sendable {
     case general
     case shortcuts
+    case searchShortcuts
     case profiles
     case commandPalette
     case trafficControl
@@ -219,6 +223,7 @@ enum SettingsDestination: String, Equatable, Codable, CaseIterable, Sendable {
         switch self {
         case .general: "General Settings"
         case .shortcuts: "Shortcuts Settings"
+        case .searchShortcuts: "Search Shortcuts Settings"
         case .profiles: "Profiles Settings"
         case .commandPalette: "Command Palette Settings"
         case .trafficControl: "Traffic Control Settings"
