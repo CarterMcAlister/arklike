@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/CarterMcAlister/arklike/compare/v0.3.3...v0.4.0) (2026-05-06)
+
+
+### Features
+
+* add launch at login setting ([96eb444](https://github.com/CarterMcAlister/arklike/commit/96eb44415b059b1bf0a799355d325d9307b82fc5))
+
 ## [0.3.3](https://github.com/CarterMcAlister/arklike/compare/v0.3.2...v0.3.3) (2026-05-06)
 
 
