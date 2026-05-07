@@ -159,11 +159,23 @@ final class CommandPanelSuggestionManager {
         guard activeScope == nil || activeScope == .all else { return Array(ranked.prefix(CommandPanelSuggestionLimits.visible)) }
         if case .url = URLParser().parse(trimmed) { return Array(ranked.prefix(CommandPanelSuggestionLimits.visible)) }
 
-        let reservedSearch = Array(ranked.filter(isSearchSuggestion).prefix(CommandPanelSuggestionLimits.searchSuggestionReserve))
-        guard !reservedSearch.isEmpty else { return Array(ranked.prefix(CommandPanelSuggestionLimits.visible)) }
+        let verbatimSearch = ranked.first(where: isVerbatimSearchSuggestion)
+        let searchSuggestions = ranked.filter(isSearchSuggestion)
 
-        var selected = reservedSearch
-        var selectedIDs = Set(reservedSearch.map(\.id))
+        var selected = [CommandPanelSuggestion]()
+        if let verbatimSearch {
+            selected.append(verbatimSearch)
+        }
+
+        var selectedIDs = Set(selected.map(\.id))
+        for suggestion in searchSuggestions where !selectedIDs.contains(suggestion.id) {
+            guard selected.count < CommandPanelSuggestionLimits.searchSuggestionReserve else { break }
+            selected.append(suggestion)
+            selectedIDs.insert(suggestion.id)
+        }
+
+        guard !selected.isEmpty else { return Array(ranked.prefix(CommandPanelSuggestionLimits.visible)) }
+
         for suggestion in ranked where !selectedIDs.contains(suggestion.id) {
             guard selected.count < CommandPanelSuggestionLimits.visible else { break }
             selected.append(suggestion)
@@ -172,9 +184,13 @@ final class CommandPanelSuggestionManager {
         return selected
     }
 
+    private func isVerbatimSearchSuggestion(_ suggestion: CommandPanelSuggestion) -> Bool {
+        suggestion.kind == .search
+    }
+
     private func isSearchSuggestion(_ suggestion: CommandPanelSuggestion) -> Bool {
         switch suggestion.kind {
-        case .search, .webSuggestion, .searchHistory:
+        case .webSuggestion, .searchHistory:
             true
         default:
             false
